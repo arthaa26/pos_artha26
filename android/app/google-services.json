@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "123456789",
+    "project_id": "pos-artha26",
+    "storage_bucket": "pos-artha26.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:123456789:android:abcdef123456",
+        "android_client_info": {
+          "package_name": "com.example.pos_artha26"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "123456789-abcdef.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAbCdEfGhIjKlMnOpQrStUvWxYz"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "123456789-abcdef.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
