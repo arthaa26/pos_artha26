@@ -513,7 +513,57 @@ class _KasirPageState extends State<KasirPage> {
                 ],
               ),
               pw.Divider(),
-              // Produk
+              // Produk Header
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Expanded(
+                    flex: 4,
+                    child: pw.Text(
+                      'Item',
+                      style: pw.TextStyle(
+                        fontSize: 12,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  pw.Expanded(
+                    flex: 1,
+                    child: pw.Text(
+                      'Qty',
+                      style: pw.TextStyle(
+                        fontSize: 12,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                      textAlign: pw.TextAlign.center,
+                    ),
+                  ),
+                  pw.Expanded(
+                    flex: 2,
+                    child: pw.Text(
+                      'Harga',
+                      style: pw.TextStyle(
+                        fontSize: 12,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                      textAlign: pw.TextAlign.right,
+                    ),
+                  ),
+                  pw.Expanded(
+                    flex: 2,
+                    child: pw.Text(
+                      'Total',
+                      style: pw.TextStyle(
+                        fontSize: 12,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                      textAlign: pw.TextAlign.right,
+                    ),
+                  ),
+                ],
+              ),
+              pw.Divider(),
+              // Produk Items
               ...cart.map((item) {
                 final produk = item['produk'] as Produk?;
                 final quantity = item['quantity'] as int? ?? 1;
@@ -524,13 +574,33 @@ class _KasirPageState extends State<KasirPage> {
                 return pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text(
-                      '$nama x$quantity',
-                      style: pw.TextStyle(fontSize: 12),
+                    pw.Expanded(
+                      flex: 4,
+                      child: pw.Text(nama, style: pw.TextStyle(fontSize: 12)),
                     ),
-                    pw.Text(
-                      'Rp ${totalHarga.toStringAsFixed(0)}',
-                      style: pw.TextStyle(fontSize: 12),
+                    pw.Expanded(
+                      flex: 1,
+                      child: pw.Text(
+                        quantity.toString(),
+                        style: pw.TextStyle(fontSize: 12),
+                        textAlign: pw.TextAlign.center,
+                      ),
+                    ),
+                    pw.Expanded(
+                      flex: 2,
+                      child: pw.Text(
+                        'Rp ${harga.toStringAsFixed(0)}',
+                        style: pw.TextStyle(fontSize: 12),
+                        textAlign: pw.TextAlign.right,
+                      ),
+                    ),
+                    pw.Expanded(
+                      flex: 2,
+                      child: pw.Text(
+                        'Rp ${totalHarga.toStringAsFixed(0)}',
+                        style: pw.TextStyle(fontSize: 12),
+                        textAlign: pw.TextAlign.right,
+                      ),
                     ),
                   ],
                 );

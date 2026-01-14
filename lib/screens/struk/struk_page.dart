@@ -181,7 +181,7 @@ class _StrukPageState extends State<StrukPage> {
         color: Colors.white,
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Logo
           SizedBox(
@@ -205,6 +205,7 @@ class _StrukPageState extends State<StrukPage> {
                 ? _storeNameController.text
                 : 'Nama Toko',
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.left,
           ),
           // Alamat
           Text(
@@ -212,32 +213,122 @@ class _StrukPageState extends State<StrukPage> {
                 ? _storeAddressController.text
                 : 'Alamat Toko',
             style: const TextStyle(fontSize: 12),
-            textAlign: TextAlign.center,
+            textAlign: TextAlign.left,
           ),
           const SizedBox(height: 16),
           // ID Transaksi, Tanggal, Kasir
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('ID: TRX001', style: const TextStyle(fontSize: 12)),
               Text('Tanggal: 2023-12-20', style: const TextStyle(fontSize: 12)),
+              Text('Kasir: Admin', style: const TextStyle(fontSize: 12)),
             ],
           ),
-          Text('Kasir: Admin', style: const TextStyle(fontSize: 12)),
           const Divider(),
-          // Produk
+          // Produk Header
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Produk A', style: const TextStyle(fontSize: 12)),
-              Text('Rp 10,000', style: const TextStyle(fontSize: 12)),
+              Expanded(
+                flex: 4,
+                child: Text(
+                  'Item',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ),
+              Expanded(
+                flex: 1,
+                child: Text(
+                  'Qty',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  'Harga',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.right,
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  'Total',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.right,
+                ),
+              ),
+            ],
+          ),
+          const Divider(),
+          // Produk Items
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                flex: 4,
+                child: Text('Produk A', style: const TextStyle(fontSize: 12)),
+              ),
+              Expanded(
+                flex: 1,
+                child: Text(
+                  '1',
+                  style: const TextStyle(fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  'Rp 10,000',
+                  style: const TextStyle(fontSize: 12),
+                  textAlign: TextAlign.right,
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  'Rp 10,000',
+                  style: const TextStyle(fontSize: 12),
+                  textAlign: TextAlign.right,
+                ),
+              ),
             ],
           ),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Produk B', style: const TextStyle(fontSize: 12)),
-              Text('Rp 15,000', style: const TextStyle(fontSize: 12)),
+              Expanded(
+                flex: 4,
+                child: Text('Produk B', style: const TextStyle(fontSize: 12)),
+              ),
+              Expanded(
+                flex: 1,
+                child: Text(
+                  '1',
+                  style: const TextStyle(fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  'Rp 15,000',
+                  style: const TextStyle(fontSize: 12),
+                  textAlign: TextAlign.right,
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  'Rp 15,000',
+                  style: const TextStyle(fontSize: 12),
+                  textAlign: TextAlign.right,
+                ),
+              ),
             ],
           ),
           const Divider(),

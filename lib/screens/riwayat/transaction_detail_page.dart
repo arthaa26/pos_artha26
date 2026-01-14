@@ -76,25 +76,113 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
             ),
             const SizedBox(height: 8),
 
-            if (transaksi.items != null && transaksi.items!.isNotEmpty)
-              ...transaksi.items!.map(
-                (item) => Card(
-                  child: ListTile(
-                    title: Text(item['nama'] ?? 'Produk'),
-                    subtitle: Text('Qty: ${item['quantity'] ?? 1}'),
-                    trailing: Text(
-                      'Rp ${(item['total'] ?? 0).toStringAsFixed(0)}',
-                    ),
-                  ),
-                ),
-              )
-            else
-              Card(
-                child: ListTile(
-                  title: Text(transaksi.deskripsi),
-                  subtitle: const Text('Detail produk tidak tersedia'),
-                ),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey),
+                borderRadius: BorderRadius.circular(8),
+                color: Colors.white,
               ),
+              child: Column(
+                children: [
+                  // Header
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        flex: 4,
+                        child: Text(
+                          'Item',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 1,
+                        child: Text(
+                          'Qty',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          'Harga',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          'Total',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+                  // Items
+                  if (transaksi.items != null && transaksi.items!.isNotEmpty)
+                    ...transaksi.items!.map(
+                      (item) => Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            flex: 4,
+                            child: Text(
+                              item['nama'] ?? 'Produk',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          Expanded(
+                            flex: 1,
+                            child: Text(
+                              '${item['quantity'] ?? 1}',
+                              style: const TextStyle(fontSize: 12),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                          Expanded(
+                            flex: 2,
+                            child: Text(
+                              'Rp ${(item['harga'] ?? 0).toStringAsFixed(0)}',
+                              style: const TextStyle(fontSize: 12),
+                              textAlign: TextAlign.right,
+                            ),
+                          ),
+                          Expanded(
+                            flex: 2,
+                            child: Text(
+                              'Rp ${(item['total'] ?? 0).toStringAsFixed(0)}',
+                              style: const TextStyle(fontSize: 12),
+                              textAlign: TextAlign.right,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    Text(
+                      transaksi.deskripsi,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                ],
+              ),
+            ),
 
             const SizedBox(height: 16),
 
@@ -454,19 +542,92 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                 ],
               ),
               pw.Divider(),
-              // Produk
+              // Produk Header
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Expanded(
+                    flex: 4,
+                    child: pw.Text(
+                      'Item',
+                      style: pw.TextStyle(
+                        fontSize: 12,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  pw.Expanded(
+                    flex: 1,
+                    child: pw.Text(
+                      'Qty',
+                      style: pw.TextStyle(
+                        fontSize: 12,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                      textAlign: pw.TextAlign.center,
+                    ),
+                  ),
+                  pw.Expanded(
+                    flex: 2,
+                    child: pw.Text(
+                      'Harga',
+                      style: pw.TextStyle(
+                        fontSize: 12,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                      textAlign: pw.TextAlign.right,
+                    ),
+                  ),
+                  pw.Expanded(
+                    flex: 2,
+                    child: pw.Text(
+                      'Total',
+                      style: pw.TextStyle(
+                        fontSize: 12,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                      textAlign: pw.TextAlign.right,
+                    ),
+                  ),
+                ],
+              ),
+              pw.Divider(),
+              // Produk Items
               if (transaksi.items != null && transaksi.items!.isNotEmpty)
                 ...transaksi.items!.map(
                   (item) => pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
-                      pw.Text(
-                        '${item['nama'] ?? 'Produk'} x${item['quantity'] ?? 1}',
-                        style: pw.TextStyle(fontSize: 12),
+                      pw.Expanded(
+                        flex: 4,
+                        child: pw.Text(
+                          item['nama'] ?? 'Produk',
+                          style: pw.TextStyle(fontSize: 12),
+                        ),
                       ),
-                      pw.Text(
-                        'Rp ${(item['total'] ?? 0).toStringAsFixed(0)}',
-                        style: pw.TextStyle(fontSize: 12),
+                      pw.Expanded(
+                        flex: 1,
+                        child: pw.Text(
+                          '${item['quantity'] ?? 1}',
+                          style: pw.TextStyle(fontSize: 12),
+                          textAlign: pw.TextAlign.center,
+                        ),
+                      ),
+                      pw.Expanded(
+                        flex: 2,
+                        child: pw.Text(
+                          'Rp ${(item['harga'] ?? 0).toStringAsFixed(0)}',
+                          style: pw.TextStyle(fontSize: 12),
+                          textAlign: pw.TextAlign.right,
+                        ),
+                      ),
+                      pw.Expanded(
+                        flex: 2,
+                        child: pw.Text(
+                          'Rp ${(item['total'] ?? 0).toStringAsFixed(0)}',
+                          style: pw.TextStyle(fontSize: 12),
+                          textAlign: pw.TextAlign.right,
+                        ),
                       ),
                     ],
                   ),

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'dart:io';
 import 'dart:convert';
+import 'package:permission_handler/permission_handler.dart';
 import '../../models/produk.dart';
 import '../../providers/pos_provider.dart';
 import '../../services/network_config.dart';
@@ -53,12 +54,51 @@ class _ProdukPageState extends State<ProdukPage>
 
   Future<void> _pickImage() async {
     try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-      if (image != null && mounted) {
-        setState(() {
-          _imageFile = image;
-        });
+      // Request permissions for different Android versions
+      PermissionStatus permissionStatus;
+
+      if (Platform.isAndroid) {
+        // For Android 13+ (API 33+)
+        if (await Permission.photos.isGranted == false) {
+          permissionStatus = await Permission.photos.request();
+        } else {
+          permissionStatus = PermissionStatus.granted;
+        }
+
+        // Fallback for older Android versions
+        if (permissionStatus.isDenied) {
+          if (await Permission.storage.isGranted == false) {
+            permissionStatus = await Permission.storage.request();
+          } else {
+            permissionStatus = PermissionStatus.granted;
+          }
+        }
+      } else {
+        // For iOS and other platforms
+        permissionStatus = await Permission.photos.request();
+      }
+
+      if (permissionStatus.isGranted) {
+        final ImagePicker picker = ImagePicker();
+        final XFile? image = await picker.pickImage(
+          source: ImageSource.gallery,
+          imageQuality: 80, // Compress image to reduce size
+        );
+        if (image != null && mounted) {
+          setState(() {
+            _imageFile = image;
+          });
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Izin akses galeri diperlukan untuk memilih gambar. Pergi ke Settings > Apps > POS Artha26 > Permissions',
+              ),
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -71,12 +111,17 @@ class _ProdukPageState extends State<ProdukPage>
 
   Future<String?> _uploadImage(XFile image) async {
     try {
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('${getBaseUrl()}/upload'),
-      );
+      final baseUrl = await getBaseUrl();
+
+      // Read image as bytes to handle scoped storage issues
+      final imageBytes = await image.readAsBytes();
+      final imageName = image.name;
+
+      var request = http.MultipartRequest('POST', Uri.parse('$baseUrl/upload'));
+
+      // Create multipart file from bytes instead of path
       request.files.add(
-        await http.MultipartFile.fromPath('gambar', image.path),
+        http.MultipartFile.fromBytes('gambar', imageBytes, filename: imageName),
       );
 
       var response = await request.send();
@@ -85,9 +130,13 @@ class _ProdukPageState extends State<ProdukPage>
         var jsonResponse = json.decode(responseData);
         return jsonResponse['url'];
       } else {
+        // Log error for debugging
+        var errorData = await response.stream.bytesToString();
+        print('Upload failed: ${response.statusCode} - $errorData');
         return null;
       }
     } catch (e) {
+      print('Upload error: $e');
       return null;
     }
   }
@@ -512,19 +561,33 @@ class _ProdukPageState extends State<ProdukPage>
                       // Favorite icon
                       IconButton(
                         onPressed: () async {
-                          if (p.id == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Simpan produk terlebih dahulu sebelum menandai favorit',
-                                ),
-                              ),
+                          try {
+                            if (p.id == null) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Simpan produk terlebih dahulu sebelum menandai favorit',
+                                    ),
+                                  ),
+                                );
+                              }
+                              return;
+                            }
+                            await context.read<PosProvider>().toggleFavorite(
+                              p.id!,
                             );
-                            return;
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Gagal mengubah status favorit: $e',
+                                  ),
+                                ),
+                              );
+                            }
                           }
-                          await context.read<PosProvider>().toggleFavorite(
-                            p.id!,
-                          );
                         },
                         icon: Icon(
                           p.favorite ? Icons.favorite : Icons.favorite_border,

@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/product.dart';
+import '../models/transaksi.dart';
 
 class LocalDbHelper {
   static final LocalDbHelper _instance = LocalDbHelper._internal();
@@ -22,7 +24,7 @@ class LocalDbHelper {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
         CREATE TABLE products (
@@ -37,6 +39,42 @@ class LocalDbHelper {
           deleted INTEGER DEFAULT 0
         )
       ''');
+        await db.execute('''
+        CREATE TABLE transaksi (
+          local_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          server_id INTEGER,
+          pendapatan REAL NOT NULL,
+          keuntungan REAL NOT NULL,
+          pengeluaran REAL NOT NULL,
+          deskripsi TEXT,
+          tanggal TEXT NOT NULL,
+          items TEXT, -- JSON string
+          paymentMethod TEXT,
+          cashGiven REAL,
+          change REAL,
+          dirty INTEGER DEFAULT 1
+        )
+      ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('''
+          CREATE TABLE transaksi (
+            local_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            server_id INTEGER,
+            pendapatan REAL NOT NULL,
+            keuntungan REAL NOT NULL,
+            pengeluaran REAL NOT NULL,
+            deskripsi TEXT,
+            tanggal TEXT NOT NULL,
+            items TEXT, -- JSON string
+            paymentMethod TEXT,
+            cashGiven REAL,
+            change REAL,
+            dirty INTEGER DEFAULT 1
+          )
+        ''');
+        }
       },
     );
   }
@@ -146,5 +184,52 @@ class LocalDbHelper {
       'dirty': 0,
       'deleted': 0,
     });
+  }
+
+  // Transaksi methods
+  Future<int> insertTransaksi(Transaksi t) async {
+    final database = await db;
+    final map = t.toJson();
+    map['items'] = json.encode(t.items ?? []);
+    map['dirty'] = 1;
+    map.remove('id'); // Use local_id
+    final id = await database.insert('transaksi', map);
+    return id;
+  }
+
+  Future<List<Transaksi>> getDirtyTransaksi() async {
+    final database = await db;
+    final rows = await database.query(
+      'transaksi',
+      where: 'dirty = ?',
+      whereArgs: [1],
+    );
+    return rows.map((row) {
+      final map = Map<String, dynamic>.from(row);
+      map['items'] = json.decode(map['items'] ?? '[]');
+      map['local_id'] = map['local_id'];
+      return Transaksi.fromJson(map);
+    }).toList();
+  }
+
+  Future<void> markTransaksiSynced(int localId, int serverId) async {
+    final database = await db;
+    await database.update(
+      'transaksi',
+      {'dirty': 0, 'server_id': serverId},
+      where: 'local_id = ?',
+      whereArgs: [localId],
+    );
+  }
+
+  Future<List<Transaksi>> getAllTransaksi() async {
+    final database = await db;
+    final rows = await database.query('transaksi');
+    return rows.map((row) {
+      final map = Map<String, dynamic>.from(row);
+      map['items'] = json.decode(map['items'] ?? '[]');
+      map['local_id'] = map['local_id'];
+      return Transaksi.fromJson(map);
+    }).toList();
   }
 }

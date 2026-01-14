@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:excel/excel.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:intl/intl.dart';
 import '../../models/transaksi.dart';
 import '../../providers/pos_provider.dart';
@@ -16,17 +15,33 @@ class LaporanTransaksiPage extends StatefulWidget {
 }
 
 class _LaporanTransaksiPageState extends State<LaporanTransaksiPage> {
-  String _selectedPeriod = 'Harian';
+  String _selectedPeriod = 'Semua';
   DateTime _selectedDate = DateTime.now();
   bool _isExporting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = context.read<PosProvider>();
+      if (provider.transaksi.isEmpty) {
+        provider.loadTransaksi();
+      }
+    });
+  }
 
   List<Transaksi> get _filteredTransactions {
     final allTransactions = context.watch<PosProvider>().transaksi;
     final dateFormat = DateFormat('yyyy-MM-dd');
 
+    print('Filtering transactions: total ${allTransactions.length}');
     return allTransactions.where((t) {
       final transactionDate = dateFormat.format(t.tanggal);
       final selectedDateStr = dateFormat.format(_selectedDate);
+
+      print(
+        'Transaction date: $transactionDate, selected: $selectedDateStr, period: $_selectedPeriod',
+      );
 
       switch (_selectedPeriod) {
         case 'Harian':
@@ -39,6 +54,8 @@ class _LaporanTransaksiPageState extends State<LaporanTransaksiPage> {
           final transactionYear = t.tanggal.year;
           final selectedYear = _selectedDate.year;
           return transactionYear == selectedYear;
+        case 'Semua':
+          return true;
         default:
           return true;
       }
@@ -147,34 +164,23 @@ class _LaporanTransaksiPageState extends State<LaporanTransaksiPage> {
             DoubleCellValue(t.pengeluaran);
       }
 
-      // Request storage permission
-      var status = await Permission.storage.request();
-      if (status.isGranted) {
-        final directory = await getExternalStorageDirectory();
-        final periodSuffix = _selectedPeriod.toLowerCase();
-        final dateSuffix = _selectedPeriod == 'Harian'
-            ? DateFormat('yyyy-MM-dd').format(_selectedDate)
-            : _selectedPeriod == 'Bulanan'
-            ? DateFormat('yyyy-MM').format(_selectedDate)
-            : DateFormat('yyyy').format(_selectedDate);
-        final fileName = 'laporan_transaksi_${periodSuffix}_$dateSuffix.xlsx';
-        final file = File('${directory!.path}/$fileName');
+      // Save to app documents directory
+      final directory = await getApplicationDocumentsDirectory();
+      final periodSuffix = _selectedPeriod.toLowerCase();
+      final dateSuffix = _selectedPeriod == 'Harian'
+          ? DateFormat('yyyy-MM-dd').format(_selectedDate)
+          : _selectedPeriod == 'Bulanan'
+          ? DateFormat('yyyy-MM').format(_selectedDate)
+          : DateFormat('yyyy').format(_selectedDate);
+      final fileName = 'laporan_transaksi_${periodSuffix}_$dateSuffix.xlsx';
+      final file = File('${directory.path}/$fileName');
 
-        await file.writeAsBytes(excel.encode()!);
+      await file.writeAsBytes(excel.encode()!);
 
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Laporan berhasil diekspor ke: $fileName')),
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Izin penyimpanan diperlukan untuk export'),
-            ),
-          );
-        }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Laporan berhasil disimpan ke: ${file.path}')),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -206,11 +212,22 @@ class _LaporanTransaksiPageState extends State<LaporanTransaksiPage> {
   @override
   Widget build(BuildContext context) {
     final filteredTransactions = _filteredTransactions;
+    print(
+      'Building laporan transaksi, total transaksi: ${context.watch<PosProvider>().transaksi.length}, filtered: ${filteredTransactions.length}',
+    );
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Laporan Transaksi'),
         backgroundColor: Colors.indigo,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () {
+              context.read<PosProvider>().loadTransaksi();
+            },
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -238,7 +255,7 @@ class _LaporanTransaksiPageState extends State<LaporanTransaksiPage> {
                         const SizedBox(width: 8),
                         DropdownButton<String>(
                           value: _selectedPeriod,
-                          items: ['Harian', 'Bulanan', 'Tahunan'].map((
+                          items: ['Harian', 'Bulanan', 'Tahunan', 'Semua'].map((
                             String value,
                           ) {
                             return DropdownMenuItem<String>(
@@ -255,28 +272,31 @@ class _LaporanTransaksiPageState extends State<LaporanTransaksiPage> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Text(
-                          _selectedPeriod == 'Tahunan'
-                              ? 'Tahun: '
-                              : 'Tanggal: ',
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton(
-                          onPressed: _selectDate,
-                          child: Text(
+                    if (_selectedPeriod != 'Semua')
+                      Row(
+                        children: [
+                          Text(
                             _selectedPeriod == 'Tahunan'
-                                ? DateFormat('yyyy').format(_selectedDate)
-                                : _selectedPeriod == 'Bulanan'
-                                ? DateFormat('MMMM yyyy').format(_selectedDate)
-                                : DateFormat(
-                                    'dd/MM/yyyy',
-                                  ).format(_selectedDate),
+                                ? 'Tahun: '
+                                : 'Tanggal: ',
                           ),
-                        ),
-                      ],
-                    ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            onPressed: _selectDate,
+                            child: Text(
+                              _selectedPeriod == 'Tahunan'
+                                  ? DateFormat('yyyy').format(_selectedDate)
+                                  : _selectedPeriod == 'Bulanan'
+                                  ? DateFormat(
+                                      'MMMM yyyy',
+                                    ).format(_selectedDate)
+                                  : DateFormat(
+                                      'dd/MM/yyyy',
+                                    ).format(_selectedDate),
+                            ),
+                          ),
+                        ],
+                      ),
                     const SizedBox(height: 16),
                     ElevatedButton.icon(
                       onPressed: _isExporting ? null : _exportToExcel,
@@ -308,7 +328,7 @@ class _LaporanTransaksiPageState extends State<LaporanTransaksiPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Ringkasan $_selectedPeriod',
+                      'Ringkasan ${_selectedPeriod == 'Semua' ? 'Semua Periode' : _selectedPeriod}',
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,

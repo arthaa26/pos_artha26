@@ -2,13 +2,19 @@ CREATE DATABASE IF NOT EXISTS pos_artha26;
 
 USE pos_artha26;
 
-CREATE TABLE IF NOT EXISTS transaksi (
+DROP TABLE IF EXISTS transaksi;
+
+CREATE TABLE transaksi (
   id INT AUTO_INCREMENT PRIMARY KEY,
   pendapatan DECIMAL(10,2) DEFAULT 0,
   keuntungan DECIMAL(10,2) DEFAULT 0,
   pengeluaran DECIMAL(10,2) DEFAULT 0,
   deskripsi VARCHAR(255),
-  tanggal TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  tanggal TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  items TEXT,
+  paymentMethod VARCHAR(50),
+  cashGiven DECIMAL(10,2),
+  `change` DECIMAL(10,2)
 );
 
 CREATE TABLE IF NOT EXISTS produk (

@@ -3,8 +3,24 @@ import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../providers/pos_provider.dart';
 
-class LaporanPengeluaranPage extends StatelessWidget {
+class LaporanPengeluaranPage extends StatefulWidget {
   const LaporanPengeluaranPage({super.key});
+
+  @override
+  State<LaporanPengeluaranPage> createState() => _LaporanPengeluaranPageState();
+}
+
+class _LaporanPengeluaranPageState extends State<LaporanPengeluaranPage> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = context.read<PosProvider>();
+      if (provider.transaksi.isEmpty) {
+        provider.loadTransaksi();
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

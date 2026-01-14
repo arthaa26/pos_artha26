@@ -125,15 +125,33 @@ app.get('/api/summary', (req, res) => {
 app.get('/api/transaksi', (req, res) => {
   db.query('SELECT * FROM transaksi ORDER BY tanggal DESC', (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
+    console.log('Fetched transaksi:', results.length, 'records');
+    // Parse items JSON
+    results.forEach(row => {
+      if (row.items) {
+        try {
+          row.items = JSON.parse(row.items);
+        } catch (e) {
+          row.items = [];
+        }
+      } else {
+        row.items = [];
+      }
+    });
     res.json(results);
   });
 });
 
 app.post('/api/transaksi', (req, res) => {
-  const { pendapatan, keuntungan, pengeluaran, deskripsi } = req.body;
-  const query = 'INSERT INTO transaksi (pendapatan, keuntungan, pengeluaran, deskripsi) VALUES (?, ?, ?, ?)';
-  db.query(query, [pendapatan, keuntungan, pengeluaran, deskripsi], (err, result) => {
-    if (err) return res.status(500).json({ error: err.message });
+  console.log('Received transaksi:', req.body);
+  const { pendapatan, keuntungan, pengeluaran, deskripsi, tanggal, items, paymentMethod, cashGiven, change } = req.body;
+  const query = 'INSERT INTO transaksi (pendapatan, keuntungan, pengeluaran, deskripsi, tanggal, items, paymentMethod, cashGiven, `change`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)';
+  db.query(query, [pendapatan, keuntungan, pengeluaran, deskripsi, tanggal || new Date(), JSON.stringify(items), paymentMethod, cashGiven, change], (err, result) => {
+    if (err) {
+      console.error('Error inserting transaksi:', err);
+      return res.status(500).json({ error: err.message });
+    }
+    console.log('Inserted transaksi with id:', result.insertId);
     res.json({ id: result.insertId });
   });
 });

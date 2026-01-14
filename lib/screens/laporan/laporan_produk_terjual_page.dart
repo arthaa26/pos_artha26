@@ -3,28 +3,38 @@ import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../providers/pos_provider.dart';
 
-class LaporanProdukTerjualPage extends StatelessWidget {
+class LaporanProdukTerjualPage extends StatefulWidget {
   const LaporanProdukTerjualPage({super.key});
+
+  @override
+  State<LaporanProdukTerjualPage> createState() =>
+      _LaporanProdukTerjualPageState();
+}
+
+class _LaporanProdukTerjualPageState extends State<LaporanProdukTerjualPage> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = context.read<PosProvider>();
+      if (provider.transaksi.isEmpty) {
+        provider.loadTransaksi();
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final transaksi = context.watch<PosProvider>().transaksi;
 
-    // Hitung produk terjual dari deskripsi transaksi
+    // Hitung produk terjual dari items transaksi
     Map<String, int> produkTerjual = {};
     for (var t in transaksi) {
-      // Parse deskripsi seperti "Penjualan: Produk A x2, Produk B x1 - Tunai"
-      final desc = t.deskripsi;
-      if (desc.startsWith('Penjualan:')) {
-        final items = desc.split(' - ')[0].replaceFirst('Penjualan: ', '');
-        final itemList = items.split(', ');
-        for (var item in itemList) {
-          final parts = item.split(' x');
-          if (parts.length == 2) {
-            final nama = parts[0];
-            final qty = int.tryParse(parts[1]) ?? 0;
-            produkTerjual[nama] = (produkTerjual[nama] ?? 0) + qty;
-          }
+      if (t.items != null) {
+        for (var item in t.items!) {
+          final nama = item['nama'] ?? '';
+          final qty = (item['quantity'] ?? 0) as int;
+          produkTerjual[nama] = (produkTerjual[nama] ?? 0) + qty;
         }
       }
     }

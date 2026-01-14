@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:excel/excel.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
-import 'package:permission_handler/permission_handler.dart';
 import '../../providers/pos_provider.dart';
 
 class ExportDataPage extends StatefulWidget {
@@ -15,6 +14,20 @@ class ExportDataPage extends StatefulWidget {
 
 class _ExportDataPageState extends State<ExportDataPage> {
   bool _isExporting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = context.read<PosProvider>();
+      if (provider.transaksi.isEmpty) {
+        provider.loadTransaksi();
+      }
+      if (provider.produk.isEmpty) {
+        provider.loadProduk();
+      }
+    });
+  }
 
   Future<void> _exportToExcel() async {
     setState(() => _isExporting = true);
@@ -30,16 +43,19 @@ class _ExportDataPageState extends State<ExportDataPage> {
       var headerStyle = CellStyle(
         bold: true,
         fontSize: 14,
+        horizontalAlign: HorizontalAlign.Center,
+        verticalAlign: VerticalAlign.Center,
       );
 
       var titleStyle = CellStyle(
         bold: true,
         fontSize: 16,
+        horizontalAlign: HorizontalAlign.Center,
       );
 
-      var dataStyle = CellStyle();
+      var dataStyle = CellStyle(horizontalAlign: HorizontalAlign.Left);
 
-      var numberStyle = CellStyle();
+      var numberStyle = CellStyle(horizontalAlign: HorizontalAlign.Right);
 
       // Sheet 1: Summary
       Sheet summarySheet = excel['Ringkasan'];
@@ -197,30 +213,18 @@ class _ExportDataPageState extends State<ExportDataPage> {
             dataStyle;
       }
 
-      // Request storage permission
-      var status = await Permission.storage.request();
-      if (status.isGranted) {
-        // Use temporary directory for simplicity
-        final directory = await getTemporaryDirectory();
-        final fileName =
-            'laporan_pos_${DateTime.now().toString().substring(0, 10)}.xlsx';
-        final file = File('${directory.path}/$fileName');
+      // Save to app documents directory
+      final directory = await getApplicationDocumentsDirectory();
+      final fileName =
+          'laporan_pos_${DateTime.now().toString().substring(0, 10)}.xlsx';
+      final file = File('${directory.path}/$fileName');
 
-        await file.writeAsBytes(excel.encode()!);
+      await file.writeAsBytes(excel.encode()!);
 
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Laporan berhasil diekspor ke: ${file.path}')),
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Izin penyimpanan diperlukan untuk export'),
-            ),
-          );
-        }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Laporan berhasil disimpan ke: ${file.path}')),
+        );
       }
     } catch (e) {
       if (mounted) {

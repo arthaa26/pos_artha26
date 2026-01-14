@@ -21,8 +21,9 @@ class _RegisterPageState extends State<RegisterPage> {
       _isLoading = true;
     });
     try {
+      final baseUrl = await getBaseUrl();
       final response = await http.post(
-        Uri.parse('${getBaseUrl()}/register'),
+        Uri.parse('$baseUrl/register'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'username': _usernameController.text,

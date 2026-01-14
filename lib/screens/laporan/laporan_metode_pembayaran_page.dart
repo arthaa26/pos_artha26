@@ -3,8 +3,26 @@ import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../providers/pos_provider.dart';
 
-class LaporanMetodePembayaranPage extends StatelessWidget {
+class LaporanMetodePembayaranPage extends StatefulWidget {
   const LaporanMetodePembayaranPage({super.key});
+
+  @override
+  State<LaporanMetodePembayaranPage> createState() =>
+      _LaporanMetodePembayaranPageState();
+}
+
+class _LaporanMetodePembayaranPageState
+    extends State<LaporanMetodePembayaranPage> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = context.read<PosProvider>();
+      if (provider.transaksi.isEmpty) {
+        provider.loadTransaksi();
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,14 +33,9 @@ class LaporanMetodePembayaranPage extends StatelessWidget {
     Map<String, double> metodeTotal = {};
 
     for (var t in transaksi) {
-      // Extract payment method from description
-      final desc = t.deskripsi;
-      final parts = desc.split(' - ');
-      if (parts.length > 1) {
-        final metode = parts.last;
-        metodeCount[metode] = (metodeCount[metode] ?? 0) + 1;
-        metodeTotal[metode] = (metodeTotal[metode] ?? 0) + t.pendapatan;
-      }
+      final metode = t.paymentMethod ?? 'Tidak Diketahui';
+      metodeCount[metode] = (metodeCount[metode] ?? 0) + 1;
+      metodeTotal[metode] = (metodeTotal[metode] ?? 0) + t.pendapatan;
     }
 
     final sortedMetode = metodeCount.entries.toList()

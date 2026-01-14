@@ -6,10 +6,10 @@ import '../models/transaksi.dart';
 import '../models/produk.dart';
 
 class ApiService {
-  static String get baseUrl =>
-      '${networkConfig.getBaseUrl()}/api'; // Ganti dengan IP server jika perlu
+  Future<String> get baseUrl async => '${await networkConfig.getBaseUrl()}/api';
 
   Future<Summary> getSummary() async {
+    final baseUrl = await this.baseUrl;
     final response = await http.get(Uri.parse('$baseUrl/summary'));
     if (response.statusCode == 200) {
       return Summary.fromJson(json.decode(response.body));
@@ -19,6 +19,7 @@ class ApiService {
   }
 
   Future<List<Transaksi>> getTransaksi() async {
+    final baseUrl = await this.baseUrl;
     final response = await http.get(Uri.parse('$baseUrl/transaksi'));
     if (response.statusCode == 200) {
       List<dynamic> data = json.decode(response.body);
@@ -29,6 +30,7 @@ class ApiService {
   }
 
   Future<void> addTransaksi(Transaksi transaksi) async {
+    final baseUrl = await this.baseUrl;
     final response = await http.post(
       Uri.parse('$baseUrl/transaksi'),
       headers: {'Content-Type': 'application/json'},
@@ -40,6 +42,7 @@ class ApiService {
   }
 
   Future<List<Produk>> getProduk() async {
+    final baseUrl = await this.baseUrl;
     final response = await http.get(Uri.parse('$baseUrl/produk'));
     if (response.statusCode == 200) {
       List<dynamic> data = json.decode(response.body);
@@ -47,11 +50,12 @@ class ApiService {
           .map((json) => Produk.fromJson(json))
           .toList();
       // Fix old localhost URLs
+      final currentBaseUrl = await networkConfig.getBaseUrl();
       for (var produk in produkList) {
         if (produk.gambar.startsWith('http://localhost')) {
           produk.gambar = produk.gambar.replaceAll(
             'http://localhost:3000',
-            networkConfig.getBaseUrl(),
+            currentBaseUrl,
           );
         }
       }
@@ -62,6 +66,7 @@ class ApiService {
   }
 
   Future<void> addProduk(Produk produk) async {
+    final baseUrl = await this.baseUrl;
     final response = await http.post(
       Uri.parse('$baseUrl/produk'),
       headers: {'Content-Type': 'application/json'},
@@ -73,6 +78,7 @@ class ApiService {
   }
 
   Future<void> updateProduk(int id, Produk produk) async {
+    final baseUrl = await this.baseUrl;
     final response = await http.put(
       Uri.parse('$baseUrl/produk/$id'),
       headers: {'Content-Type': 'application/json'},
@@ -84,10 +90,11 @@ class ApiService {
   }
 
   Future<void> updateStok(int id, int jumlah) async {
+    final baseUrl = await this.baseUrl;
     final response = await http.put(
       Uri.parse('$baseUrl/produk/$id/stok'),
       headers: {'Content-Type': 'application/json'},
-      body: json.encode({'jumlah': jumlah}),
+      body: json.encode({'stok': jumlah}),
     );
     if (response.statusCode != 200) {
       throw Exception('Failed to update stok');
@@ -95,6 +102,7 @@ class ApiService {
   }
 
   Future<void> deleteProduk(int id) async {
+    final baseUrl = await this.baseUrl;
     final response = await http.delete(Uri.parse('$baseUrl/produk/$id'));
     if (response.statusCode != 200) {
       throw Exception('Failed to delete produk');

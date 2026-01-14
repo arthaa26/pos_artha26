@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../models/product.dart';
+import '../models/transaksi.dart';
 import 'local_db_helper.dart';
 
 class SyncService {
@@ -18,7 +19,11 @@ class SyncService {
   Future<void> syncAll() async {
     if (!await isOnline()) return;
 
-    // 1) Push local dirty records
+    await syncProducts();
+    await syncTransaksi();
+  }
+
+  Future<void> syncProducts() async {
     final dirty = await _db.getDirtyProducts();
     for (final p in dirty) {
       try {
@@ -95,6 +100,26 @@ class SyncService {
       }
     } catch (e) {
       print('Pull sync error: $e');
+    }
+  }
+
+  Future<void> syncTransaksi() async {
+    // Push local dirty transaksi
+    final dirty = await _db.getDirtyTransaksi();
+    for (final t in dirty) {
+      try {
+        final resp = await http.post(
+          Uri.parse('$baseUrl/api/transaksi'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode(t.toJson()),
+        );
+        if (resp.statusCode == 200 || resp.statusCode == 201) {
+          final newId = json.decode(resp.body)['id'];
+          await _db.markTransaksiSynced(t.localId!, newId);
+        }
+      } catch (e) {
+        print('Push transaksi sync error: $e');
+      }
     }
   }
 }
