@@ -3,7 +3,7 @@ import 'pengaturan_page.dart';
 
 // Wrapper to keep backwards compatibility for routes/imports named SettingsPage
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({Key? key}) : super(key: key);
+  const SettingsPage({super.key});
 
   @override
   Widget build(BuildContext context) => const PengaturanPage();

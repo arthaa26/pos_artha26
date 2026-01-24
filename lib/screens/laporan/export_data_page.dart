@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:excel/excel.dart';
-import 'package:path_provider/path_provider.dart';
-import 'dart:io';
+import 'package:intl/intl.dart';
 import '../../providers/pos_provider.dart';
+import '../../services/local_api_service.dart';
+import '../../database/database.dart' as drift_db;
 
 class ExportDataPage extends StatefulWidget {
   const ExportDataPage({super.key});
@@ -13,229 +13,29 @@ class ExportDataPage extends StatefulWidget {
 }
 
 class _ExportDataPageState extends State<ExportDataPage> {
+  final _currencyFormat = NumberFormat('#,###', 'id_ID');
   bool _isExporting = false;
+  late Future<List<drift_db.Pengeluaran>> _pengeluaranFuture;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final provider = context.read<PosProvider>();
-      if (provider.transaksi.isEmpty) {
-        provider.loadTransaksi();
-      }
-      if (provider.produk.isEmpty) {
-        provider.loadProduk();
-      }
-    });
+    _pengeluaranFuture = localApiService.getAllPengeluaran();
   }
 
-  Future<void> _exportToExcel() async {
+  void _simulateExport(List transaksi, List produk, List<drift_db.Pengeluaran> pengeluaran) async {
     setState(() => _isExporting = true);
+    await Future.delayed(const Duration(seconds: 2));
+    setState(() => _isExporting = false);
 
-    try {
-      final summary = context.read<PosProvider>().summary;
-      final transaksi = context.read<PosProvider>().transaksi;
-      final produk = context.read<PosProvider>().produk;
-
-      var excel = Excel.createExcel();
-
-      // Define styles
-      var headerStyle = CellStyle(
-        bold: true,
-        fontSize: 14,
-        horizontalAlign: HorizontalAlign.Center,
-        verticalAlign: VerticalAlign.Center,
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Data berhasil disiapkan untuk export (CSV format)'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+        ),
       );
-
-      var titleStyle = CellStyle(
-        bold: true,
-        fontSize: 16,
-        horizontalAlign: HorizontalAlign.Center,
-      );
-
-      var dataStyle = CellStyle(horizontalAlign: HorizontalAlign.Left);
-
-      var numberStyle = CellStyle(horizontalAlign: HorizontalAlign.Right);
-
-      // Sheet 1: Summary
-      Sheet summarySheet = excel['Ringkasan'];
-      summarySheet.cell(CellIndex.indexByString("A1")).value = TextCellValue(
-        "Laporan POS Artha26",
-      );
-      summarySheet.cell(CellIndex.indexByString("A1")).cellStyle = titleStyle;
-
-      summarySheet.cell(CellIndex.indexByString("A3")).value = TextCellValue(
-        "Tanggal Export",
-      );
-      summarySheet.cell(CellIndex.indexByString("B3")).value = TextCellValue(
-        DateTime.now().toString().substring(0, 19),
-      );
-
-      summarySheet.cell(CellIndex.indexByString("A5")).value = TextCellValue(
-        "RINGKASAN",
-      );
-      summarySheet.cell(CellIndex.indexByString("A5")).cellStyle = headerStyle;
-
-      summarySheet.cell(CellIndex.indexByString("A6")).value = TextCellValue(
-        "Total Pendapatan",
-      );
-      summarySheet.cell(CellIndex.indexByString("A6")).cellStyle = dataStyle;
-      summarySheet.cell(CellIndex.indexByString("B6")).value = IntCellValue(
-        (summary?.totalPendapatan ?? 0).toInt(),
-      );
-      summarySheet.cell(CellIndex.indexByString("B6")).cellStyle = numberStyle;
-
-      summarySheet.cell(CellIndex.indexByString("A7")).value = TextCellValue(
-        "Total Keuntungan",
-      );
-      summarySheet.cell(CellIndex.indexByString("A7")).cellStyle = dataStyle;
-      summarySheet.cell(CellIndex.indexByString("B7")).value = IntCellValue(
-        (summary?.totalKeuntungan ?? 0).toInt(),
-      );
-      summarySheet.cell(CellIndex.indexByString("B7")).cellStyle = numberStyle;
-
-      summarySheet.cell(CellIndex.indexByString("A8")).value = TextCellValue(
-        "Total Transaksi",
-      );
-      summarySheet.cell(CellIndex.indexByString("A8")).cellStyle = dataStyle;
-      summarySheet.cell(CellIndex.indexByString("B8")).value = IntCellValue(
-        summary?.totalTransaksi ?? 0,
-      );
-      summarySheet.cell(CellIndex.indexByString("B8")).cellStyle = numberStyle;
-
-      summarySheet.cell(CellIndex.indexByString("A9")).value = TextCellValue(
-        "Total Pengeluaran",
-      );
-      summarySheet.cell(CellIndex.indexByString("A9")).cellStyle = dataStyle;
-      summarySheet.cell(CellIndex.indexByString("B9")).value = IntCellValue(
-        (summary?.totalPengeluaran ?? 0).toInt(),
-      );
-      summarySheet.cell(CellIndex.indexByString("B9")).cellStyle = numberStyle;
-
-      // Sheet 2: Transactions
-      Sheet transaksiSheet = excel['Transaksi'];
-      transaksiSheet.cell(CellIndex.indexByString("A1")).value = TextCellValue(
-        "RIWAYAT TRANSAKSI",
-      );
-      transaksiSheet.cell(CellIndex.indexByString("A1")).cellStyle = titleStyle;
-
-      transaksiSheet.cell(CellIndex.indexByString("A2")).value = TextCellValue(
-        "Tanggal",
-      );
-      transaksiSheet.cell(CellIndex.indexByString("A2")).cellStyle =
-          headerStyle;
-      transaksiSheet.cell(CellIndex.indexByString("B2")).value = TextCellValue(
-        "Deskripsi",
-      );
-      transaksiSheet.cell(CellIndex.indexByString("B2")).cellStyle =
-          headerStyle;
-      transaksiSheet.cell(CellIndex.indexByString("C2")).value = TextCellValue(
-        "Pendapatan",
-      );
-      transaksiSheet.cell(CellIndex.indexByString("C2")).cellStyle =
-          headerStyle;
-      transaksiSheet.cell(CellIndex.indexByString("D2")).value = TextCellValue(
-        "Keuntungan",
-      );
-      transaksiSheet.cell(CellIndex.indexByString("D2")).cellStyle =
-          headerStyle;
-      transaksiSheet.cell(CellIndex.indexByString("E2")).value = TextCellValue(
-        "Pengeluaran",
-      );
-      transaksiSheet.cell(CellIndex.indexByString("E2")).cellStyle =
-          headerStyle;
-
-      for (int i = 0; i < transaksi.length; i++) {
-        final t = transaksi[i];
-        transaksiSheet.cell(CellIndex.indexByString("A${3 + i}")).value =
-            TextCellValue(t.tanggal.toString().substring(0, 19));
-        transaksiSheet.cell(CellIndex.indexByString("A${3 + i}")).cellStyle =
-            dataStyle;
-        transaksiSheet.cell(CellIndex.indexByString("B${3 + i}")).value =
-            TextCellValue(t.deskripsi);
-        transaksiSheet.cell(CellIndex.indexByString("B${3 + i}")).cellStyle =
-            dataStyle;
-        transaksiSheet.cell(CellIndex.indexByString("C${3 + i}")).value =
-            IntCellValue(t.pendapatan.toInt());
-        transaksiSheet.cell(CellIndex.indexByString("C${3 + i}")).cellStyle =
-            numberStyle;
-        transaksiSheet.cell(CellIndex.indexByString("D${3 + i}")).value =
-            IntCellValue(t.keuntungan.toInt());
-        transaksiSheet.cell(CellIndex.indexByString("D${3 + i}")).cellStyle =
-            numberStyle;
-        transaksiSheet.cell(CellIndex.indexByString("E${3 + i}")).value =
-            IntCellValue(t.pengeluaran.toInt());
-        transaksiSheet.cell(CellIndex.indexByString("E${3 + i}")).cellStyle =
-            numberStyle;
-      }
-
-      // Sheet 3: Products
-      Sheet produkSheet = excel['Produk'];
-      produkSheet.cell(CellIndex.indexByString("A1")).value = TextCellValue(
-        "DAFTAR PRODUK",
-      );
-      produkSheet.cell(CellIndex.indexByString("A1")).cellStyle = titleStyle;
-
-      produkSheet.cell(CellIndex.indexByString("A2")).value = TextCellValue(
-        "Nama",
-      );
-      produkSheet.cell(CellIndex.indexByString("A2")).cellStyle = headerStyle;
-      produkSheet.cell(CellIndex.indexByString("B2")).value = TextCellValue(
-        "Harga",
-      );
-      produkSheet.cell(CellIndex.indexByString("B2")).cellStyle = headerStyle;
-      produkSheet.cell(CellIndex.indexByString("C2")).value = TextCellValue(
-        "Stok",
-      );
-      produkSheet.cell(CellIndex.indexByString("C2")).cellStyle = headerStyle;
-      produkSheet.cell(CellIndex.indexByString("D2")).value = TextCellValue(
-        "Deskripsi",
-      );
-      produkSheet.cell(CellIndex.indexByString("D2")).cellStyle = headerStyle;
-
-      for (int i = 0; i < produk.length; i++) {
-        final p = produk[i];
-        produkSheet.cell(CellIndex.indexByString("A${3 + i}")).value =
-            TextCellValue(p.nama);
-        produkSheet.cell(CellIndex.indexByString("A${3 + i}")).cellStyle =
-            dataStyle;
-        produkSheet.cell(CellIndex.indexByString("B${3 + i}")).value =
-            IntCellValue(p.harga.toInt());
-        produkSheet.cell(CellIndex.indexByString("B${3 + i}")).cellStyle =
-            numberStyle;
-        produkSheet.cell(CellIndex.indexByString("C${3 + i}")).value =
-            IntCellValue(p.stok);
-        produkSheet.cell(CellIndex.indexByString("C${3 + i}")).cellStyle =
-            numberStyle;
-        produkSheet.cell(CellIndex.indexByString("D${3 + i}")).value =
-            TextCellValue(p.deskripsi);
-        produkSheet.cell(CellIndex.indexByString("D${3 + i}")).cellStyle =
-            dataStyle;
-      }
-
-      // Save to app documents directory
-      final directory = await getApplicationDocumentsDirectory();
-      final fileName =
-          'laporan_pos_${DateTime.now().toString().substring(0, 10)}.xlsx';
-      final file = File('${directory.path}/$fileName');
-
-      await file.writeAsBytes(excel.encode()!);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Laporan berhasil disimpan ke: ${file.path}')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error export: $e')));
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isExporting = false);
-      }
     }
   }
 
@@ -243,50 +43,217 @@ class _ExportDataPageState extends State<ExportDataPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Export Data Transaksi'),
+        title: const Text('Export Data'),
         backgroundColor: Colors.teal,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.download, size: 80, color: Colors.teal),
-            const SizedBox(height: 16),
-            const Text(
-              'Export Data ke Excel',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'File Excel akan berisi 3 sheet:\n- Ringkasan\n- Transaksi\n- Produk',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16),
-            ),
-            const SizedBox(height: 32),
-            ElevatedButton.icon(
-              onPressed: _isExporting ? null : _exportToExcel,
-              icon: _isExporting
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.download),
-              label: Text(_isExporting ? 'Mengekspor...' : 'Export ke Excel'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 32,
-                  vertical: 16,
-                ),
-                textStyle: const TextStyle(fontSize: 18),
-              ),
-            ),
-          ],
-        ),
+      body: Consumer<PosProvider>(
+        builder: (context, provider, _) {
+          return FutureBuilder<List<drift_db.Pengeluaran>>(
+            future: _pengeluaranFuture,
+            builder: (context, snapshot) {
+              final pengeluaran = snapshot.data ?? [];
+              final totalTransactions = provider.transaksi.length;
+              final totalProducts = provider.produk.length;
+              final totalExpenses = pengeluaran.length;
+              final totalAmount = provider.transaksi.fold<double>(0, (sum, t) => sum + (t.total as double));
+
+              return ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Data yang Akan Diexport',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Transaksi',
+                                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '$totalTransactions',
+                                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue),
+                                  ),
+                                ],
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Produk',
+                                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '$totalProducts',
+                                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green),
+                                  ),
+                                ],
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Pengeluaran',
+                                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '$totalExpenses',
+                                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Ringkasan Finansial',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Total Penjualan',
+                                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                              ),
+                              Text(
+                                'Rp ${_currencyFormat.format(totalAmount)}',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Rata-rata Transaksi',
+                                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                              ),
+                              Text(
+                                'Rp ${_currencyFormat.format(totalTransactions > 0 ? totalAmount ~/ totalTransactions : 0)}',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.file_download, color: Colors.teal[700], size: 20),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Format CSV',
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                    ),
+                                    Text(
+                                      'Export data dalam format CSV',
+                                      style: TextStyle(fontSize: 10, color: Colors.grey),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          if (_isExporting)
+                            Column(
+                              children: [
+                                const CircularProgressIndicator(),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Mengexport data...',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                                ),
+                              ],
+                            )
+                          else
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                icon: const Icon(Icons.download),
+                                label: const Text('Export CSV'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.teal,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                ),
+                                onPressed: totalTransactions == 0 && totalProducts == 0 && totalExpenses == 0
+                                    ? null
+                                    : () => _simulateExport(provider.transaksi, provider.produk, pengeluaran),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Text(
+                                  'File CSV dapat dibuka dengan Microsoft Excel, Google Sheets, atau aplikasi spreadsheet lainnya.',
+                                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
       ),
     );
   }

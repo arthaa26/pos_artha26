@@ -21,6 +21,7 @@ class AppSettings {
   final double profitMargin;
   final String storeLogoPath;
   final double ppnRate;
+  final double hppMargin; // HPP margin percentage
 
   AppSettings({
     this.storeName = 'TOKO ARTHA26',
@@ -45,6 +46,7 @@ class AppSettings {
     this.profitMargin = 0.2,
     this.storeLogoPath = '',
     this.ppnRate = 0.1,
+    this.hppMargin = 0.0,
   });
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -71,6 +73,7 @@ class AppSettings {
       profitMargin: (json['profitMargin'] ?? 0.2).toDouble(),
       storeLogoPath: json['storeLogoPath'] ?? '',
       ppnRate: (json['ppnRate'] ?? 0.1).toDouble(),
+      hppMargin: (json['hppMargin'] ?? 0.0).toDouble(),
     );
   }
 
@@ -98,6 +101,7 @@ class AppSettings {
       'profitMargin': profitMargin,
       'storeLogoPath': storeLogoPath,
       'ppnRate': ppnRate,
+      'hppMargin': hppMargin,
     };
   }
 
@@ -124,6 +128,7 @@ class AppSettings {
     bool? showCashier,
     double? profitMargin,
     double? ppnRate,
+    double? hppMargin,
   }) {
     return AppSettings(
       storeName: storeName ?? this.storeName,
@@ -152,6 +157,7 @@ class AppSettings {
       storeLogoPath: storeLogoPath ?? this.storeLogoPath,
       profitMargin: profitMargin ?? this.profitMargin,
       ppnRate: ppnRate ?? this.ppnRate,
+      hppMargin: hppMargin ?? this.hppMargin,
     );
   }
 }

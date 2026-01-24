@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'dart:io';
-import '../../models/produk.dart';
-import '../../models/transaksi.dart';
+import 'package:intl/intl.dart';
+import 'dart:io' if (kIsWeb) 'dart:html';
+import '../../database/database.dart' if (kIsWeb) 'dart:async';
 import '../../providers/pos_provider.dart';
+import '../../services/local_api_service.dart';
+import '../../services/bluetooth_printer_service.dart';
+import '../../services/print_manager_service.dart';
+import '../../models/thermal_receipt.dart';
+import '../../widgets/printer_connection_dialog.dart';
+import '../../widgets/receipt_preview_widget.dart';
 
 class KasirPage extends StatefulWidget {
   const KasirPage({super.key});
@@ -98,8 +105,10 @@ class _KasirPageState extends State<KasirPage> {
                   itemCount: cart.length,
                   itemBuilder: (context, index) {
                     final item = cart[index];
-                    final produk = item['produk'] as Produk;
-                    final quantity = item['quantity'] as int;
+                    final produk = item['produk'] as Produk?;
+                    final quantity = item['quantity'] as int?;
+                    if (produk == null || quantity == null)
+                      return const SizedBox.shrink();
                     final subtotal = produk.harga * quantity;
 
                     return Padding(
@@ -118,7 +127,7 @@ class _KasirPageState extends State<KasirPage> {
                                   ),
                                 ),
                                 Text(
-                                  'Rp ${produk.harga.toStringAsFixed(0)} x $quantity',
+                                  'Rp ${NumberFormat('#,###', 'id_ID').format(produk.harga.toInt())} x $quantity',
                                   style: const TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey,
@@ -128,7 +137,7 @@ class _KasirPageState extends State<KasirPage> {
                             ),
                           ),
                           Text(
-                            'Rp ${subtotal.toStringAsFixed(0)}',
+                            'Rp ${NumberFormat('#,###', 'id_ID').format(subtotal.toInt())}',
                             style: const TextStyle(fontWeight: FontWeight.w500),
                           ),
                         ],
@@ -146,7 +155,7 @@ class _KasirPageState extends State<KasirPage> {
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   Text(
-                    'Rp ${total.toStringAsFixed(0)}',
+                    'Rp ${NumberFormat('#,###', 'id_ID').format(total.toInt())}',
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -161,19 +170,19 @@ class _KasirPageState extends State<KasirPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Batal'),
             style: TextButton.styleFrom(foregroundColor: Colors.grey),
+            child: const Text('Batal'),
           ),
           ElevatedButton(
             onPressed: () {
               Navigator.of(context).pop();
               showPaymentDialog();
             },
-            child: const Text('Lanjut ke Pembayaran'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.blue,
               foregroundColor: Colors.white,
             ),
+            child: const Text('Lanjut ke Pembayaran'),
           ),
         ],
       ),
@@ -206,7 +215,7 @@ class _KasirPageState extends State<KasirPage> {
                     style: TextStyle(fontSize: 14),
                   ),
                   Text(
-                    'Rp ${total.toStringAsFixed(0)}',
+                    'Rp ${NumberFormat('#,###', 'id_ID').format(total.toInt())}',
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -252,8 +261,8 @@ class _KasirPageState extends State<KasirPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Batal'),
             style: TextButton.styleFrom(foregroundColor: Colors.grey),
+            child: const Text('Batal'),
           ),
           ElevatedButton(
             onPressed: () {
@@ -279,11 +288,11 @@ class _KasirPageState extends State<KasirPage> {
               Navigator.of(context).pop();
               processPayment(cash, change);
             },
-            child: const Text('Proses Pembayaran'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.green,
               foregroundColor: Colors.white,
             ),
+            child: const Text('Proses Pembayaran'),
           ),
         ],
       ),
@@ -298,161 +307,392 @@ class _KasirPageState extends State<KasirPage> {
       onPressed: () {
         controller.text = amount.toStringAsFixed(0);
       },
-      child: Text('Rp ${amount.toStringAsFixed(0)}'),
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.grey[200],
         foregroundColor: Colors.black,
         minimumSize: const Size(70, 32),
         padding: const EdgeInsets.symmetric(horizontal: 8),
       ),
+      child: Text(
+        'Rp ${NumberFormat('#,###', 'id_ID').format(amount.toInt())}',
+      ),
     );
   }
 
   void processPayment(double cashGiven, double change) {
-    // Show payment summary
+    final provider = context.read<PosProvider>();
+    final settings = provider.settings;
+    
+    // Generate transaction number
+    final now = DateTime.now();
+    final nomorTransaksi =
+        'TRX${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
+
+    // Prepare receipt items
+    final receiptItems = cart.map((item) {
+      final produk = item['produk'] as Produk;
+      final quantity = item['quantity'] as int;
+      final diskon = (item['diskon'] as double?) ?? 0;
+      final subtotal = (produk.harga * quantity) - diskon;
+
+      return {
+        'nama': produk.nama,
+        'jumlah': quantity,
+        'hargaSatuan': produk.harga,
+        'subtotal': subtotal,
+      };
+    }).toList();
+
+    // Show payment summary with receipt preview
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Pembayaran Berhasil'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.check_circle, color: Colors.green, size: 64),
-            const SizedBox(height: 16),
-            const Text(
-              'Transaksi berhasil diproses!',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
+        content: SingleChildScrollView(
+          child: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.check_circle, color: Colors.green, size: 64),
+                const SizedBox(height: 16),
+                const Text(
+                  'Transaksi berhasil diproses!',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                // Receipt Preview
+                ReceiptPreviewWidget(
+                  storeName: settings.storeName,
+                  storeAddress: settings.storeAddress,
+                  storePhone: settings.storePhone,
+                  storeLogoPath: settings.storeLogoPath,
+                  items: receiptItems,
+                  subtotal: total,
+                  ppnRate: settings.ppnRate,
+                  cashGiven: cashGiven,
+                  change: change,
+                  transactionNumber: nomorTransaksi,
+                  transactionTime: DateTime.now(),
+                  thankYouMessage: settings.receiptFooter,
+                  operatingHours: settings.receiptHeader,
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Total:'),
-                      Text('Rp ${total.toStringAsFixed(0)}'),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Dibayar:'),
-                      Text('Rp ${cashGiven.toStringAsFixed(0)}'),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Kembalian:'),
-                      Text(
-                        'Rp ${change.toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Tutup'),
           ),
-          ElevatedButton(
+          TextButton(
             onPressed: () {
               Navigator.of(context).pop();
-              finalizeTransaction(cashGiven, change);
+              _showPrintMethodDialog(cashGiven, change);
             },
+            style: TextButton.styleFrom(foregroundColor: Colors.blue),
             child: const Text('Cetak Struk'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
-            ),
           ),
         ],
       ),
     );
   }
 
-  Future<void> finalizeTransaction(double cashGiven, double change) async {
-    double pendapatan = total;
-    double keuntungan = total * 0.2; // Asumsi margin 20%
-    double pengeluaran = 0;
-    String deskripsi =
-        'Penjualan: ${cart.map((item) => '${item['produk'].nama} x${item['quantity']}').join(', ')}';
-
-    // Simpan detail produk untuk riwayat
-    List<Map<String, dynamic>> transactionItems = cart.map((item) {
-      final produk = item['produk'] as Produk;
-      return {
-        'nama': produk.nama,
-        'harga': produk.harga,
-        'quantity': item['quantity'],
-        'total': produk.harga * (item['quantity'] as int),
-      };
-    }).toList();
-
-    final transaksi = Transaksi(
-      pendapatan: pendapatan,
-      keuntungan: keuntungan,
-      pengeluaran: pengeluaran,
-      deskripsi: deskripsi,
-      tanggal: DateTime.now(),
-      items: transactionItems,
-      paymentMethod: 'Tunai',
-      cashGiven: cashGiven,
-      change: change,
+  void _showPrintMethodDialog(double cashGiven, double change) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Pilih Metode Cetak'),
+        content: const Text('Pilih cara mencetak struk:'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              finalizeTransaction(cashGiven, change, printMethod: 'pdf');
+            },
+            child: const Text('📄 PDF'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              finalizeTransaction(cashGiven, change, printMethod: 'thermal');
+            },
+            child: const Text('🖨️ Thermal Printer'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            child: const Text('Batal'),
+          ),
+        ],
+      ),
     );
+  }
 
+  Future<void> finalizeTransaction(
+    double cashGiven,
+    double change, {
+    String printMethod = 'pdf',
+  }) async {
     try {
-      await context.read<PosProvider>().addTransaksi(transaksi);
+      // Generate transaction number
+      final now = DateTime.now();
+      final nomorTransaksi =
+          'TRX${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
 
-      // Kurangi stok untuk setiap item di cart
-      for (var item in cart) {
-        await context.read<PosProvider>().updateStok(
-          item['produk'].id!,
-          item['quantity'],
-        );
+      // Prepare items data for transaction
+      final items = cart.map((item) {
+        final produk = item['produk'] as Produk;
+        final quantity = item['quantity'] as int;
+        final diskon = (item['diskon'] as double?) ?? 0;
+        final subtotal = (produk.harga * quantity) - diskon;
+
+        return {
+          'produkId': produk.id,
+          'nama': produk.nama,
+          'jumlah': quantity,
+          'hargaSatuan': produk.harga,
+          'diskon': diskon,
+          'subtotal': subtotal,
+        };
+      }).toList();
+
+      // Save transaction to database
+      await localApiService.addTransaksi(
+        nomorTransaksi: nomorTransaksi,
+        items: items,
+        total: total,
+        bayar: cashGiven,
+        kembalian: change,
+        metode: 'Tunai', // Default to cash
+        catatan: null,
+      );
+
+      // Reload transactions in provider
+      if (mounted) {
+        await context.read<PosProvider>().loadTransaksi();
       }
 
-      // Show receipt and print
-      await _printReceipt(cashGiven, change);
+      // Show receipt and print based on method
+      if (mounted) {
+        if (printMethod == 'thermal') {
+          await _printThermal(cashGiven, change, nomorTransaksi);
+        } else {
+          await _printReceipt(cashGiven, change, nomorTransaksi);
+        }
+      }
 
       // Clear cart after payment
-      setState(() {
-        cart.clear();
-        total = 0;
-      });
+      if (mounted) {
+        setState(() {
+          cart.clear();
+          total = 0;
+        });
 
-      // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Transaksi berhasil! Data tersimpan di riwayat.'),
-          backgroundColor: Colors.green,
-        ),
-      );
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Transaksi berhasil! Struk dicetak via ${printMethod == 'thermal' ? 'Thermal Printer' : 'PDF'}.',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
     }
   }
 
-  Future<void> _printReceipt(double cashGiven, double change) async {
+  Future<void> _printThermal(
+    double cashGiven,
+    double change,
+    String nomorTransaksi,
+  ) async {
+    try {
+      final provider = context.read<PosProvider>();
+      final settings = provider.settings;
+
+      if (kDebugMode) print('🖨️ [Kasir] Starting thermal print process...');
+
+      // Create thermal receipt data
+      final receiptItems = cart.map((item) {
+        final produk = item['produk'] as Produk;
+        final quantity = item['quantity'] as int;
+        final diskon = (item['diskon'] as double?) ?? 0;
+        final subtotal = (produk.harga * quantity) - diskon;
+
+        return {
+          'nama': produk.nama,
+          'jumlah': quantity,
+          'hargaSatuan': produk.harga,
+          'subtotal': subtotal,
+        };
+      }).toList();
+
+      // Calculate PPN
+      final ppnAmount = total * settings.ppnRate;
+      final grandTotal = total + ppnAmount;
+
+      final receipt = ThermalReceipt(
+        storeName: settings.storeName,
+        storeAddress: settings.storeAddress,
+        storePhone: settings.storePhone,
+        storeLogoPath: settings.storeLogoPath.isNotEmpty ? settings.storeLogoPath : null,
+        items: receiptItems,
+        subtotal: total,
+        ppnRate: settings.ppnRate,
+        ppnAmount: ppnAmount,
+        grandTotal: grandTotal,
+        cashGiven: cashGiven,
+        change: change,
+        transactionNumber: nomorTransaksi,
+        transactionTime: DateTime.now(),
+        cashierName: 'Admin',
+      );
+
+      if (kDebugMode) {
+        print('   Receipt generated');
+        print('   Items: ${receiptItems.length}');
+        print('   Total: $total');
+      }
+
+      // Use unified print manager service
+      final printManager = PrintManagerService();
+
+      if (kDebugMode) print('   Verifying printer connection...');
+
+      // Check if connected to Bluetooth printer
+      if (printManager.isPrinterReady()) {
+        if (kDebugMode) print('   ✅ Printer connected, sending data...');
+
+        // Print via unified manager
+        final success = await printManager.printThermalReceipt(
+          receipt: receipt,
+          is58mm: true, // Use 58mm format
+        );
+
+        if (success) {
+          if (kDebugMode) print('✅ [Kasir] Print SUCCESS');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✅ Struk berhasil dicetak!'),
+                backgroundColor: Colors.green,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        } else {
+          if (kDebugMode) print('❌ [Kasir] Print FAILED');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('❌ Gagal cetak - lihat logs untuk detail error'),
+                backgroundColor: Colors.red,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+      } else {
+        if (kDebugMode) print('❌ [Kasir] Printer NOT connected');
+
+        // Show dialog to connect printer
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Printer Tidak Terhubung'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Printer Bluetooth tidak terhubung. Silakan hubungkan ke printer Bluetooth di menu 🖨️ Printer terlebih dahulu.',
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Info:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const Text(
+                          'Silakan hubungkan printer Bluetooth dari menu Printer',
+                          style: TextStyle(fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Batal'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    showDialog(
+                      context: context,
+                      builder: (context) => const PrinterConnectionDialog(),
+                    );
+                  },
+                  child: const Text('Hubungkan Printer'),
+                ),
+              ],
+            ),
+          );
+        }
+      }
+
+      // Also print receipt text to console for debugging
+      if (kDebugMode) {
+        print('=== THERMAL RECEIPT TEXT ===');
+        print(receipt.toThermalText());
+        print('============================');
+      }
+
+      if (mounted) {
+        Navigator.of(context).pop(); // Close dialog if any
+      }
+    } catch (e) {
+      if (kDebugMode) print('❌ [Kasir] Thermal print error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error mencetak: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _printReceipt(
+    double cashGiven,
+    double change,
+    String nomorTransaksi,
+  ) async {
     final provider = context.read<PosProvider>();
     final settings = provider.settings;
     final pdf = pw.Document();
@@ -502,7 +742,7 @@ class _KasirPageState extends State<KasirPage> {
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
                   pw.Text(
-                    'ID: TRX${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}',
+                    'ID: $nomorTransaksi',
                     style: pw.TextStyle(fontSize: 12),
                   ),
                   pw.Text(
@@ -589,7 +829,7 @@ class _KasirPageState extends State<KasirPage> {
                     pw.Expanded(
                       flex: 2,
                       child: pw.Text(
-                        'Rp ${harga.toStringAsFixed(0)}',
+                        'Rp ${NumberFormat('#,###', 'id_ID').format(harga.toInt())}',
                         style: pw.TextStyle(fontSize: 12),
                         textAlign: pw.TextAlign.right,
                       ),
@@ -597,7 +837,7 @@ class _KasirPageState extends State<KasirPage> {
                     pw.Expanded(
                       flex: 2,
                       child: pw.Text(
-                        'Rp ${totalHarga.toStringAsFixed(0)}',
+                        'Rp ${NumberFormat('#,###', 'id_ID').format(totalHarga.toInt())}',
                         style: pw.TextStyle(fontSize: 12),
                         textAlign: pw.TextAlign.right,
                       ),
@@ -615,7 +855,7 @@ class _KasirPageState extends State<KasirPage> {
                     style: pw.TextStyle(fontSize: 12),
                   ),
                   pw.Text(
-                    'Rp ${(total * settings.ppnRate).toStringAsFixed(0)}',
+                    'Rp ${NumberFormat('#,###', 'id_ID').format((total * settings.ppnRate).toInt())}',
                     style: pw.TextStyle(fontSize: 12),
                   ),
                 ],
@@ -641,7 +881,7 @@ class _KasirPageState extends State<KasirPage> {
                 children: [
                   pw.Text('Subtotal', style: pw.TextStyle(fontSize: 12)),
                   pw.Text(
-                    'Rp ${total.toStringAsFixed(0)}',
+                    'Rp ${NumberFormat('#,###', 'id_ID').format(total.toInt())}',
                     style: pw.TextStyle(fontSize: 12),
                   ),
                 ],
@@ -664,7 +904,7 @@ class _KasirPageState extends State<KasirPage> {
                     ),
                   ),
                   pw.Text(
-                    'Rp ${(total * 1.1).toStringAsFixed(0)}',
+                    'Rp ${NumberFormat('#,###', 'id_ID').format((total * 1.1).toInt())}',
                     style: pw.TextStyle(
                       fontSize: 14,
                       fontWeight: pw.FontWeight.bold,
@@ -679,7 +919,7 @@ class _KasirPageState extends State<KasirPage> {
                 children: [
                   pw.Text('Dibayar', style: pw.TextStyle(fontSize: 12)),
                   pw.Text(
-                    'Rp ${cashGiven.toStringAsFixed(0)}',
+                    'Rp ${NumberFormat('#,###', 'id_ID').format(cashGiven.toInt())}',
                     style: pw.TextStyle(fontSize: 12),
                   ),
                 ],
@@ -689,7 +929,7 @@ class _KasirPageState extends State<KasirPage> {
                 children: [
                   pw.Text('Kembalian', style: pw.TextStyle(fontSize: 12)),
                   pw.Text(
-                    'Rp ${change.toStringAsFixed(0)}',
+                    'Rp ${NumberFormat('#,###', 'id_ID').format(change.toInt())}',
                     style: pw.TextStyle(fontSize: 12),
                   ),
                 ],
@@ -724,7 +964,9 @@ class _KasirPageState extends State<KasirPage> {
       onLayout: (PdfPageFormat format) async => pdf.save(),
     );
 
-    Navigator.of(context).pop(); // Close dialog
+    if (mounted) {
+      Navigator.of(context).pop(); // Close dialog
+    }
   }
 
   @override
@@ -737,6 +979,63 @@ class _KasirPageState extends State<KasirPage> {
       appBar: AppBar(
         title: const Text('Kasir'),
         backgroundColor: Colors.grey[300],
+        actions: [
+          // Printer connection status button
+          StreamBuilder<bool>(
+            stream: BluetoothPrinterService().connectionStateStream,
+            initialData: BluetoothPrinterService().isConnected,
+            builder: (context, snapshot) {
+              final isConnected =
+                  snapshot.data ?? BluetoothPrinterService().isConnected;
+              return Padding(
+                padding: const EdgeInsets.only(right: 8.0),
+                child: Center(
+                  child: GestureDetector(
+                    onTap: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => const PrinterConnectionDialog(),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isConnected
+                            ? Colors.green[100]
+                            : Colors.orange[100],
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.print,
+                            color: isConnected ? Colors.green : Colors.orange,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            isConnected
+                                ? '🖨️ Terhubung'
+                                : '🖨️ Belum Terhubung',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: isConnected ? Colors.green : Colors.orange,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
@@ -762,7 +1061,7 @@ class _KasirPageState extends State<KasirPage> {
     );
   }
 
-  Widget _buildProductGrid(List<Produk> produk) {
+  Widget _buildProductGrid(List<dynamic> produk) {
     final filteredProduk = _selectedKategori == 'Semua'
         ? produk
         : produk.where((p) => p.kategori == _selectedKategori).toList();
@@ -822,9 +1121,12 @@ class _KasirPageState extends State<KasirPage> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        if (p.gambar.isNotEmpty)
+                        if ((p.gambar ?? '').isNotEmpty)
                           Expanded(
-                            child: Image.network(p.gambar, fit: BoxFit.cover),
+                            child: Image.file(
+                              File(p.gambar ?? ''),
+                              fit: BoxFit.cover,
+                            ),
                           )
                         else
                           const Expanded(child: Icon(Icons.image, size: 50)),
@@ -1006,11 +1308,11 @@ class _KasirPageState extends State<KasirPage> {
                               color: Colors.blue[100],
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: item['produk'].gambar.isNotEmpty
+                            child: (item['produk'].gambar?.isNotEmpty ?? false)
                                 ? ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
-                                    child: Image.network(
-                                      item['produk'].gambar,
+                                    child: Image.file(
+                                      File(item['produk'].gambar!),
                                       fit: BoxFit.cover,
                                     ),
                                   )
@@ -1024,11 +1326,11 @@ class _KasirPageState extends State<KasirPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Rp ${item['produk'].harga.toStringAsFixed(0)} x ${item['quantity']}',
+                                'Rp ${NumberFormat('#,###', 'id_ID').format(item['produk'].harga.toInt())} x ${item['quantity']}',
                                 style: const TextStyle(fontSize: 12),
                               ),
                               Text(
-                                'Subtotal: Rp ${(item['produk'].harga * item['quantity']).toStringAsFixed(0)}',
+                                'Subtotal: Rp ${NumberFormat('#,###', 'id_ID').format((item['produk'].harga * item['quantity']).toInt())}',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w500,
@@ -1129,7 +1431,7 @@ class _KasirPageState extends State<KasirPage> {
                         ),
                       ),
                       Text(
-                        'Rp ${total.toStringAsFixed(0)}',
+                        'Rp ${NumberFormat('#,###', 'id_ID').format(total.toInt())}',
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -1298,7 +1600,7 @@ class ReceiptWidget extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'Rp ${totalHarga.toStringAsFixed(0)}',
+                  'Rp ${NumberFormat('#,###', 'id_ID').format(totalHarga.toInt())}',
                   style: const TextStyle(fontSize: 12),
                 ),
               ],
@@ -1314,7 +1616,7 @@ class ReceiptWidget extends StatelessWidget {
                 style: const TextStyle(fontSize: 12),
               ),
               Text(
-                'Rp ${(total * settings.ppnRate).toStringAsFixed(0)}',
+                'Rp ${NumberFormat('#,###', 'id_ID').format((total * settings.ppnRate).toInt())}',
                 style: const TextStyle(fontSize: 12),
               ),
             ],
@@ -1330,7 +1632,7 @@ class ReceiptWidget extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text('Metode', style: TextStyle(fontSize: 12)),
-              const Text('Tunai', style: const TextStyle(fontSize: 12)),
+              const Text('Tunai', style: TextStyle(fontSize: 12)),
             ],
           ),
           const Divider(),
@@ -1340,7 +1642,7 @@ class ReceiptWidget extends StatelessWidget {
             children: [
               const Text('Subtotal', style: TextStyle(fontSize: 12)),
               Text(
-                'Rp ${total.toStringAsFixed(0)}',
+                'Rp ${NumberFormat('#,###', 'id_ID').format(total.toInt())}',
                 style: const TextStyle(fontSize: 12),
               ),
             ],
@@ -1360,7 +1662,7 @@ class ReceiptWidget extends StatelessWidget {
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
               ),
               Text(
-                'Rp ${(total * 1.1).toStringAsFixed(0)}',
+                'Rp ${NumberFormat('#,###', 'id_ID').format((total * 1.1).toInt())}',
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,

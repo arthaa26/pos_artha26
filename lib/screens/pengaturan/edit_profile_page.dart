@@ -15,6 +15,9 @@ class EditProfilePage extends StatefulWidget {
 class _EditProfilePageState extends State<EditProfilePage> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _ppnController = TextEditingController();
+  final TextEditingController _hppController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
   XFile? _pickedLogo;
 
@@ -24,12 +27,18 @@ class _EditProfilePageState extends State<EditProfilePage> {
     final settings = context.read<PosProvider>().settings;
     _nameController.text = settings.storeName;
     _addressController.text = settings.storeAddress;
+    _phoneController.text = settings.storePhone;
+    _ppnController.text = (settings.ppnRate * 100).toStringAsFixed(1);
+    _hppController.text = (settings.hppMargin * 100).toStringAsFixed(1);
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _addressController.dispose();
+    _phoneController.dispose();
+    _ppnController.dispose();
+    _hppController.dispose();
     super.dispose();
   }
 
@@ -40,10 +49,16 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   void _save() {
     final provider = context.read<PosProvider>();
+    final ppnValue = double.tryParse(_ppnController.text) ?? 10;
+    final hppValue = double.tryParse(_hppController.text) ?? 0;
+
     final newSettings = provider.settings.copyWith(
       storeName: _nameController.text,
       storeAddress: _addressController.text,
+      storePhone: _phoneController.text,
       storeLogoPath: _pickedLogo?.path ?? provider.settings.storeLogoPath,
+      ppnRate: ppnValue / 100,
+      hppMargin: hppValue / 100,
     );
     provider.updateSettings(newSettings);
     ScaffoldMessenger.of(
@@ -120,6 +135,50 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 border: OutlineInputBorder(),
               ),
               maxLines: 3,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _phoneController,
+              decoration: const InputDecoration(
+                labelText: 'No. Telepon Toko',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.phone,
+            ),
+            const SizedBox(height: 20),
+            const Divider(),
+            const SizedBox(height: 12),
+            const Text(
+              'Pengaturan Transaksi',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _ppnController,
+                    decoration: const InputDecoration(
+                      labelText: 'PPN (%)',
+                      border: OutlineInputBorder(),
+                      suffix: Text('%'),
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _hppController,
+                    decoration: const InputDecoration(
+                      labelText: 'HPP/Margin (%)',
+                      border: OutlineInputBorder(),
+                      suffix: Text('%'),
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 24),
             ElevatedButton(

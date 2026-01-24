@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
-import 'dart:io';
+import 'package:intl/intl.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'dart:io' show File if (kIsWeb) 'dart:html';
 import 'screens/auth/splash_screen.dart';
 import 'screens/auth/register_page.dart';
 import 'screens/kasir/kasir_page.dart';
@@ -10,11 +13,84 @@ import 'screens/laporan/laporan_page.dart';
 import 'screens/riwayat/riwayat_page.dart';
 import 'screens/pengaturan/pengaturan_page.dart';
 import 'screens/pengaturan/keamanan_page.dart';
+import 'screens/settings/printer_settings_page.dart';
 import 'screens/struk/struk_page.dart';
 import 'screens/pengaturan/edit_profile_page.dart';
+import 'screens/web_unsupported_page.dart';
 import 'providers/pos_provider.dart';
+import 'services/database_service.dart';
+import 'services/local_api_service.dart';
+import 'services/file_permission_service.dart';
 
-void main() {
+/// Helper function to load image from file path, with fallback for web
+Widget loadImageFromPath(String? path, {double? height, double? width, BoxFit fit = BoxFit.cover}) {
+  if (path == null || path.isEmpty) {
+    return Image.asset('assets/placeholder.png', height: height, width: width, fit: fit);
+  }
+  
+  if (kIsWeb) {
+    // Web: use network or asset image
+    return Image.asset('assets/placeholder.png', height: height, width: width, fit: fit);
+  }
+  
+  // Native: use file image
+  try {
+    return Image.file(File(path), height: height, width: width, fit: fit);
+  } catch (_) {
+    return Image.asset('assets/placeholder.png', height: height, width: width, fit: fit);
+  }
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize date formatting for Indonesian locale
+  await initializeDateFormatting('id_ID', null);
+
+  // Check if running on web
+  if (kIsWeb) {
+    if (kDebugMode) print('⚠️ Running on web platform - not fully supported');
+    runApp(const MyApp());
+    return;
+  }
+
+  // Request storage permissions for real device
+  if (kDebugMode) print('🔐 Requesting storage permissions...');
+  final fileService = FilePermissionService();
+  final permissionGranted = await fileService.requestStoragePermissions();
+  if (kDebugMode) {
+    print(permissionGranted
+        ? '✅ Storage permissions granted'
+        : '⚠️ Storage permissions denied');
+  }
+
+  // Initialize Drift database (native only)
+  try {
+    if (kDebugMode) print('🔄 Starting database initialization...');
+    await DatabaseService.initialize();
+    if (kDebugMode) print('✅ Database initialized successfully');
+
+    if (kDebugMode) print('🔄 Initializing API Service...');
+    final dbInstance = DatabaseService.instance;
+    if (kDebugMode) print('✅ Database instance obtained');
+    
+    LocalApiService().initialize(dbInstance);
+    if (kDebugMode) print('✅ API Service initialized successfully');
+    
+    // Test database connectivity
+    try {
+      final testData = await LocalApiService().getProduk();
+      if (kDebugMode) print('✅ Database test: Found ${testData.length} products');
+    } catch (testError) {
+      if (kDebugMode) print('⚠️ Database test failed (may be empty): $testError');
+    }
+  } catch (e, stackTrace) {
+    if (kDebugMode) {
+      print('❌ Database initialization failed: $e');
+      print('Stack trace: $stackTrace');
+    }
+  }
+
   runApp(
     MultiProvider(
       providers: [ChangeNotifierProvider(create: (_) => PosProvider())],
@@ -28,6 +104,16 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Show unsupported message on web
+    if (kIsWeb) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(useMaterial3: true, primarySwatch: Colors.blue),
+        home: const WebUnsupportedPage(),
+      );
+    }
+
+    // Normal app for native platforms
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData(useMaterial3: true, primarySwatch: Colors.blue),
@@ -40,6 +126,7 @@ class MyApp extends StatelessWidget {
         '/produk': (context) => const ProdukPage(),
         '/laporan': (context) => const LaporanPage(),
         '/riwayat': (context) => const RiwayatPage(),
+        '/printer-settings': (context) => const PrinterSettingsPage(),
         '/settings': (context) => const PengaturanPage(),
         '/keamanan': (context) => const KeamananPage(),
         '/struk': (context) => const StrukPage(),
@@ -82,7 +169,7 @@ class _DashboardPageState extends State<DashboardPage> {
             final path = provider.settings.storeLogoPath;
             if (path.isNotEmpty) {
               try {
-                return Image.file(File(path), height: 36);
+                return loadImageFromPath(path, height: 36);
               } catch (_) {
                 return Text(
                   provider.settings.storeName,
@@ -131,10 +218,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         child: settings.storeLogoPath.isNotEmpty
                             ? ClipRRect(
                                 borderRadius: BorderRadius.circular(10),
-                                child: Image.file(
-                                  File(settings.storeLogoPath),
-                                  fit: BoxFit.cover,
-                                ),
+                                child: loadImageFromPath(settings.storeLogoPath, fit: BoxFit.cover),
                               )
                             : Icon(
                                 Icons.store,
@@ -214,6 +298,15 @@ class _DashboardPageState extends State<DashboardPage> {
                 Navigator.pushNamed(context, '/riwayat');
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.print, color: Colors.blue),
+              title: const Text('🖨️ Printer'),
+              subtitle: const Text('Kelola Printer'),
+              onTap: () {
+                Navigator.pop(context); // Close drawer
+                Navigator.pushNamed(context, '/printer-settings');
+              },
+            ),
             const Divider(),
             ListTile(
               leading: const Icon(Icons.settings, color: Colors.grey),
@@ -264,7 +357,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.blue.withOpacity(0.3),
+                            color: Colors.blue.withValues(alpha: 0.3),
                             spreadRadius: 2,
                             blurRadius: 8,
                             offset: const Offset(0, 4),
@@ -283,7 +376,7 @@ class _DashboardPageState extends State<DashboardPage> {
                               border: Border.all(color: Colors.white, width: 3),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.2),
+                                  color: Colors.black.withValues(alpha: 0.2),
                                   spreadRadius: 1,
                                   blurRadius: 4,
                                   offset: const Offset(0, 2),
@@ -293,10 +386,7 @@ class _DashboardPageState extends State<DashboardPage> {
                             child: settings.storeLogoPath.isNotEmpty
                                 ? ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
-                                    child: Image.file(
-                                      File(settings.storeLogoPath),
-                                      fit: BoxFit.cover,
-                                    ),
+                                    child: loadImageFromPath(settings.storeLogoPath, fit: BoxFit.cover),
                                   )
                                 : Container(
                                     decoration: BoxDecoration(
@@ -339,7 +429,9 @@ class _DashboardPageState extends State<DashboardPage> {
                                     settings.storeAddress,
                                     style: TextStyle(
                                       fontSize: 14,
-                                      color: Colors.white.withOpacity(0.9),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.9,
+                                      ),
                                     ),
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
@@ -464,14 +556,16 @@ class _DashboardPageState extends State<DashboardPage> {
 
                 // --- Section Produk Pilihan ---
                 const Text(
-                  "Produk Pilihan",
+                  "Produk Terbaru",
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                 ),
                 const SizedBox(height: 12),
                 Consumer<PosProvider>(
                   builder: (context, provider, child) {
-                    final fav = provider.favoriteProduk;
-                    if (fav.isEmpty) {
+                    final allProducts = provider.produk;
+                    // Show first 4 products
+                    final topProducts = allProducts.take(4).toList();
+                    if (topProducts.isEmpty) {
                       return Container(
                         height: 120,
                         width: double.infinity,
@@ -482,7 +576,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         ),
                         child: const Center(
                           child: Text(
-                            "Belum ada produk pilihan",
+                            "Belum ada produk",
                             style: TextStyle(color: Colors.grey),
                           ),
                         ),
@@ -492,11 +586,11 @@ class _DashboardPageState extends State<DashboardPage> {
                       height: 140,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
-                        itemCount: fav.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 12),
+                        itemCount: topProducts.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 12),
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         itemBuilder: (context, index) {
-                          final p = fav[index];
+                          final p = topProducts[index];
                           return Container(
                             width: 140,
                             decoration: BoxDecoration(
@@ -511,12 +605,8 @@ class _DashboardPageState extends State<DashboardPage> {
                                 Expanded(
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
-                                    child: p.gambar.isNotEmpty
-                                        ? Image.network(
-                                            p.gambar,
-                                            width: double.infinity,
-                                            fit: BoxFit.cover,
-                                          )
+                                    child: (p.gambar ?? '').isNotEmpty
+                                        ? loadImageFromPath(p.gambar, width: double.infinity, fit: BoxFit.cover)
                                         : Container(color: Colors.grey[200]),
                                   ),
                                 ),
@@ -530,7 +620,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 Text(
-                                  'Rp ${p.harga.toStringAsFixed(0)}',
+                                  'Rp ${NumberFormat('#,###', 'id_ID').format(p.harga.toInt())}',
                                   style: const TextStyle(
                                     fontSize: 12,
                                     color: Colors.black54,
@@ -689,7 +779,7 @@ class _DashboardPageState extends State<DashboardPage> {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: Colors.black.withValues(alpha: 0.1),
               blurRadius: 4,
               offset: const Offset(0, 2),
             ),

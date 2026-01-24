@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
-import 'dart:io';
-import 'dart:convert';
-import 'package:permission_handler/permission_handler.dart';
-import '../../models/produk.dart';
+import 'dart:io' if (kIsWeb) 'dart:html';
+import 'package:permission_handler/permission_handler.dart'
+    if (kIsWeb) 'dart:async';
+import 'package:path_provider/path_provider.dart' if (kIsWeb) 'dart:async';
+import 'package:device_info_plus/device_info_plus.dart' if (kIsWeb) 'dart:async';
 import '../../providers/pos_provider.dart';
-import '../../services/network_config.dart';
+import '../../database/database.dart' if (kIsWeb) 'dart:async' as drift_db;
+// import '../../services/file_permission_service.dart';
 
 class ProdukPage extends StatefulWidget {
   const ProdukPage({super.key});
@@ -58,24 +60,29 @@ class _ProdukPageState extends State<ProdukPage>
       PermissionStatus permissionStatus;
 
       if (Platform.isAndroid) {
-        // For Android 13+ (API 33+)
-        if (await Permission.photos.isGranted == false) {
-          permissionStatus = await Permission.photos.request();
+        // For Android 13+ (API 33+), use READ_MEDIA_IMAGES
+        final androidInfo = await DeviceInfoPlugin().androidInfo;
+        
+        if (androidInfo.version.sdkInt >= 33) {
+          // Android 13+: Use READ_MEDIA_IMAGES
+          if (await Permission.photos.isGranted == false) {
+            permissionStatus = await Permission.photos.request();
+          } else {
+            permissionStatus = PermissionStatus.granted;
+          }
         } else {
-          permissionStatus = PermissionStatus.granted;
-        }
-
-        // Fallback for older Android versions
-        if (permissionStatus.isDenied) {
+          // Android 6-12: Use READ_EXTERNAL_STORAGE
           if (await Permission.storage.isGranted == false) {
             permissionStatus = await Permission.storage.request();
           } else {
             permissionStatus = PermissionStatus.granted;
           }
         }
-      } else {
-        // For iOS and other platforms
+      } else if (Platform.isIOS) {
+        // For iOS
         permissionStatus = await Permission.photos.request();
+      } else {
+        permissionStatus = PermissionStatus.granted;
       }
 
       if (permissionStatus.isGranted) {
@@ -111,32 +118,72 @@ class _ProdukPageState extends State<ProdukPage>
 
   Future<String?> _uploadImage(XFile image) async {
     try {
-      final baseUrl = await getBaseUrl();
+      if (kDebugMode) print('📸 Starting image upload...');
 
-      // Read image as bytes to handle scoped storage issues
-      final imageBytes = await image.readAsBytes();
-      final imageName = image.name;
+      // Get app documents directory
+      final Directory? appDir = await getApplicationDocumentsDirectory();
+      
+      if (appDir == null) {
+        if (kDebugMode) print('❌ Cannot access app documents directory');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Tidak dapat mengakses folder dokumentasi'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return null;
+      }
 
-      var request = http.MultipartRequest('POST', Uri.parse('$baseUrl/upload'));
+      // Create filename with timestamp
+      final String fileName = 'produk_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final String fullPath = '${appDir.path}/$fileName';
 
-      // Create multipart file from bytes instead of path
-      request.files.add(
-        http.MultipartFile.fromBytes('gambar', imageBytes, filename: imageName),
-      );
+      if (kDebugMode) print('📁 Target path: $fullPath');
 
-      var response = await request.send();
-      if (response.statusCode == 200) {
-        var responseData = await response.stream.bytesToString();
-        var jsonResponse = json.decode(responseData);
-        return jsonResponse['url'];
-      } else {
-        // Log error for debugging
-        var errorData = await response.stream.bytesToString();
-        print('Upload failed: ${response.statusCode} - $errorData');
+      // Check if source file exists
+      final sourceFile = File(image.path);
+      if (!await sourceFile.exists()) {
+        if (kDebugMode) print('❌ Source image file not found: ${image.path}');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('File gambar tidak ditemukan'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return null;
+      }
+
+      // Copy image file to app directory
+      try {
+        final File savedImage = await sourceFile.copy(fullPath);
+        if (kDebugMode) print('✅ Image saved to: ${savedImage.path}');
+        return savedImage.path;
+      } catch (copyError) {
+        if (kDebugMode) print('❌ Error copying file: $copyError');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Gagal menyimpan gambar: $copyError'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
         return null;
       }
     } catch (e) {
-      print('Upload error: $e');
+      if (kDebugMode) print('❌ Image handling error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error menyimpan gambar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
       return null;
     }
   }
@@ -182,7 +229,7 @@ class _ProdukPageState extends State<ProdukPage>
           ),
           tabs: const [
             Tab(icon: Icon(Icons.inventory_2, size: 20), text: 'Produk'),
-            Tab(icon: Icon(Icons.favorite, size: 20), text: 'Favorit'),
+            Tab(icon: Icon(Icons.trending_up, size: 20), text: 'Populer'),
           ],
         ),
       ),
@@ -235,22 +282,18 @@ class _ProdukPageState extends State<ProdukPage>
                         children: _buildCategorizedProductList(),
                       ),
 
-                // Favorit (only favorites from the filtered list)
+                // Popular Products (top 5 by stok)
                 Builder(
                   builder: (context) {
-                    final favs = _filteredAndSortedProduk
-                        .where((p) => p.favorite)
-                        .toList();
-                    if (favs.isEmpty) {
-                      return const Center(
-                        child: Text('Belum ada produk favorit'),
-                      );
+                    final popular = _filteredAndSortedProduk.take(5).toList();
+                    if (popular.isEmpty) {
+                      return const Center(child: Text('Belum ada produk'));
                     }
                     return ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: favs.length,
+                      itemCount: popular.length,
                       itemBuilder: (context, index) {
-                        final p = favs[index];
+                        final p = popular[index];
                         return _buildProductItem(p);
                       },
                     );
@@ -300,14 +343,14 @@ class _ProdukPageState extends State<ProdukPage>
     );
   }
 
-  List<Produk> get _filteredAndSortedProduk {
+  List<dynamic> get _filteredAndSortedProduk {
     final produkList = context.watch<PosProvider>().produk;
-    List<Produk> filtered = produkList.where((produk) {
+    List<dynamic> filtered = produkList.where((produk) {
       // Search filter
       if (_searchQuery.isNotEmpty) {
         final matchesSearch =
             produk.nama.toLowerCase().contains(_searchQuery) ||
-            produk.deskripsi.toLowerCase().contains(_searchQuery);
+            (produk.deskripsi?.toLowerCase().contains(_searchQuery) ?? false);
         if (!matchesSearch) return false;
       }
 
@@ -342,26 +385,50 @@ class _ProdukPageState extends State<ProdukPage>
   }
 
   List<Widget> _buildCategorizedProductList() {
-    final Map<String, List<Produk>> categorizedProducts = {
-      'food': [],
-      'drinks': [],
-      'snacks': [],
+    final Map<String, List<drift_db.Produk>> categorizedProducts = {
+      'Makanan': [],
+      'Minuman': [],
+      'Cemilan': [],
+      'Lainnya': [],
     };
 
-    // Group products by category
+    // Group products by category - normalize kategori names
     for (final produk in _filteredAndSortedProduk) {
-      final kategori = produk.kategori ?? 'food'; // Default to food if null
-      if (categorizedProducts.containsKey(kategori)) {
-        categorizedProducts[kategori]!.add(produk);
+      final kategori =
+          produk.kategori ?? 'Makanan'; // Default to Makanan if null
+      String normalizedKategori;
+
+      // Normalize old kategori names to new format
+      switch (kategori) {
+        case 'food':
+          normalizedKategori = 'Makanan';
+          break;
+        case 'drinks':
+          normalizedKategori = 'Minuman';
+          break;
+        case 'snacks':
+          normalizedKategori = 'Cemilan';
+          break;
+        default:
+          normalizedKategori = kategori;
+      }
+
+      if (categorizedProducts.containsKey(normalizedKategori)) {
+        categorizedProducts[normalizedKategori]!.add(produk);
       } else {
-        categorizedProducts['food']!.add(produk); // Fallback
+        categorizedProducts['Lainnya']!.add(produk); // Fallback to Lainnya
       }
     }
 
     final List<Widget> widgets = [];
 
     // Create ExpansionTile for each category (always show all categories)
-    final categoryOrder = ['food', 'drinks', 'snacks'];
+    final categoryOrder = [
+      'Makanan',
+      'Minuman',
+      'Cemilan',
+      'Lainnya',
+    ];
     for (final kategori in categoryOrder) {
       final produkList = categorizedProducts[kategori]!;
       final kategoriName = _getKategoriDisplayName(kategori);
@@ -393,14 +460,51 @@ class _ProdukPageState extends State<ProdukPage>
     return widgets;
   }
 
+  Widget _buildProductImage(String imagePath) {
+    try {
+      if (imagePath.startsWith('http') || imagePath.startsWith('https')) {
+        // Network image
+        return Image.network(
+          imagePath,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return const Icon(Icons.broken_image, color: Colors.grey);
+          },
+        );
+      } else {
+        // Local file
+        final file = File(imagePath);
+        if (file.existsSync()) {
+          return Image.file(
+            file,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              return const Icon(Icons.broken_image, color: Colors.grey);
+            },
+          );
+        } else {
+          return const Icon(Icons.image_not_supported, color: Colors.grey);
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) print('Error loading image: $e');
+      return const Icon(Icons.image_not_supported, color: Colors.grey);
+    }
+  }
+
   String _getKategoriDisplayName(String kategori) {
     switch (kategori) {
+      case 'Makanan':
       case 'food':
         return 'Makanan';
+      case 'Minuman':
       case 'drinks':
         return 'Minuman';
+      case 'Cemilan':
       case 'snacks':
         return 'Cemilan';
+      case 'Lainnya':
+        return 'Lainnya';
       default:
         return kategori;
     }
@@ -520,7 +624,7 @@ class _ProdukPageState extends State<ProdukPage>
     );
   }
 
-  Widget _buildProductItem(Produk p) {
+  Widget _buildProductItem(drift_db.Produk p) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 2,
@@ -536,8 +640,8 @@ class _ProdukPageState extends State<ProdukPage>
                 width: 80,
                 height: 80,
                 color: Colors.grey[100],
-                child: p.gambar.isNotEmpty
-                    ? Image.network(p.gambar, fit: BoxFit.cover)
+                child: (p.gambar ?? '').isNotEmpty
+                    ? _buildProductImage(p.gambar!)
                     : const Icon(Icons.image, size: 40, color: Colors.grey),
               ),
             ),
@@ -558,47 +662,71 @@ class _ProdukPageState extends State<ProdukPage>
                           ),
                         ),
                       ),
-                      // Favorite icon
+                      // Delete icon
                       IconButton(
                         onPressed: () async {
                           try {
-                            if (p.id == null) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Simpan produk terlebih dahulu sebelum menandai favorit',
-                                    ),
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('Hapus Produk'),
+                                content: const Text(
+                                  'Yakin ingin menghapus produk ini?',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, false),
+                                    child: const Text('Batal'),
                                   ),
-                                );
-                              }
-                              return;
-                            }
-                            await context.read<PosProvider>().toggleFavorite(
-                              p.id!,
+                                  ElevatedButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, true),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.red,
+                                    ),
+                                    child: const Text('Hapus'),
+                                  ),
+                                ],
+                              ),
                             );
+                            if (confirm == true) {
+                              try {
+                                // ignore: use_build_context_synchronously
+                                await context.read<PosProvider>().deleteProduk(
+                                  p.id,
+                                );
+                                if (mounted) {
+                                  // ignore: use_build_context_synchronously
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Produk berhasil dihapus'),
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Error: $e')),
+                                  );
+                                }
+                              }
+                            }
                           } catch (e) {
                             if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Gagal mengubah status favorit: $e',
-                                  ),
-                                ),
+                                SnackBar(content: Text('Gagal: $e')),
                               );
                             }
                           }
                         },
-                        icon: Icon(
-                          p.favorite ? Icons.favorite : Icons.favorite_border,
-                          color: p.favorite ? Colors.red : Colors.grey,
-                        ),
+                        icon: const Icon(Icons.more_vert, color: Colors.grey),
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    p.deskripsi,
+                    p.deskripsi ?? 'Tanpa deskripsi',
                     style: const TextStyle(fontSize: 13, color: Colors.black54),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -664,16 +792,22 @@ class _ProdukPageState extends State<ProdukPage>
                     );
                     if (confirm == true) {
                       try {
-                        await context.read<PosProvider>().deleteProduk(p.id!);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Produk berhasil dihapus'),
-                          ),
-                        );
+                        // ignore: use_build_context_synchronously
+                        await context.read<PosProvider>().deleteProduk(p.id);
+                        if (mounted) {
+                          // ignore: use_build_context_synchronously
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Produk berhasil dihapus'),
+                            ),
+                          );
+                        }
                       } catch (e) {
-                        ScaffoldMessenger.of(
-                          context,
-                        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+                        if (mounted) {
+                          ScaffoldMessenger.of(
+                            context,
+                          ).showSnackBar(SnackBar(content: Text('Error: $e')));
+                        }
                       }
                     }
                   },
@@ -691,7 +825,7 @@ class _ProdukPageState extends State<ProdukPage>
     );
   }
 
-  void _showProdukDialog(BuildContext context, {Produk? produk}) {
+  void _showProdukDialog(BuildContext context, {drift_db.Produk? produk}) {
     final isEditing = produk != null;
     final formKey = GlobalKey<FormState>();
 
@@ -699,19 +833,27 @@ class _ProdukPageState extends State<ProdukPage>
     final hargaController = TextEditingController(
       text: produk?.harga.toString() ?? '',
     );
+    final hargaModalController = TextEditingController(
+      text: produk?.hargaBeli?.toString() ?? '',
+    );
     final stokController = TextEditingController(
       text: produk?.stok.toString() ?? '',
     );
+    final stokMinimalController = TextEditingController(text: '');
     final deskripsiController = TextEditingController(
       text: produk?.deskripsi ?? '',
     );
-    String? selectedKategori = produk?.kategori ?? 'food';
-    final List<String> kategoriOptions = ['food', 'drinks', 'snacks'];
+    String? selectedKategori = produk?.kategori ?? 'Makanan';
+    final List<String> kategoriOptions = [
+      'Makanan',
+      'Minuman',
+      'Cemilan',
+      'Lainnya',
+    ];
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) {
-          bool favState = produk?.favorite ?? false;
           return AlertDialog(
             title: Text(isEditing ? 'Edit Produk' : 'Tambah Produk'),
             content: Form(
@@ -720,51 +862,81 @@ class _ProdukPageState extends State<ProdukPage>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Image picker section
-                    GestureDetector(
-                      onTap: () async {
-                        await _pickImage();
-                        setState(() {});
-                      },
-                      child: Container(
-                        width: 100,
-                        height: 100,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[200],
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.grey[300]!),
-                        ),
-                        child: _imageFile != null
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.file(
-                                  File(_imageFile!.path),
-                                  fit: BoxFit.cover,
-                                ),
-                              )
-                            : produk?.gambar.isNotEmpty == true
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.network(
-                                  produk!.gambar,
-                                  fit: BoxFit.cover,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.add_photo_alternate,
-                                size: 40,
-                                color: Colors.grey,
+                    // Image picker section - with better styling
+                    Center(
+                      child: GestureDetector(
+                        onTap: () async {
+                          await _pickImage();
+                          setState(() {});
+                        },
+                        child: Container(
+                          width: 140,
+                          height: 140,
+                          decoration: BoxDecoration(
+                            color: Colors.blue[50],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.blue[300]!,
+                              width: 2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.blue.withOpacity(0.1),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
                               ),
+                            ],
+                          ),
+                          child: _imageFile != null
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Image.file(
+                                    File(_imageFile!.path),
+                                    fit: BoxFit.cover,
+                                  ),
+                                )
+                              : (produk?.gambar ?? '').isNotEmpty
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Image.file(
+                                    File(produk!.gambar ?? ''),
+                                    fit: BoxFit.cover,
+                                  ),
+                                )
+                              : Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.add_photo_alternate,
+                                      size: 48,
+                                      color: Colors.blue[400],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Pilih Foto',
+                                      style: TextStyle(
+                                        color: Colors.blue[700],
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
 
                     // Name field
                     TextFormField(
                       controller: namaController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Nama Produk',
-                        border: OutlineInputBorder(),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        prefixIcon: const Icon(Icons.shopping_bag),
+                        filled: true,
+                        fillColor: Colors.grey[50],
                       ),
                       validator: (value) {
                         if (value?.isEmpty ?? true) {
@@ -773,15 +945,20 @@ class _ProdukPageState extends State<ProdukPage>
                         return null;
                       },
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
 
                     // Price field
                     TextFormField(
                       controller: hargaController,
-                      decoration: const InputDecoration(
-                        labelText: 'Harga',
-                        border: OutlineInputBorder(),
-                        prefixText: 'Rp ',
+                      decoration: InputDecoration(
+                        labelText: 'Harga Jual',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        prefixIcon: const Icon(Icons.attach_money),
+                        filled: true,
+                        fillColor: Colors.grey[50],
+                        hintText: '10000',
                       ),
                       keyboardType: TextInputType.number,
                       validator: (value) {
@@ -794,14 +971,37 @@ class _ProdukPageState extends State<ProdukPage>
                         return null;
                       },
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
+
+                    // Harga Modal field
+                    TextFormField(
+                      controller: hargaModalController,
+                      decoration: InputDecoration(
+                        labelText: 'Harga Modal (Opsional)',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        prefixIcon: const Icon(Icons.point_of_sale),
+                        filled: true,
+                        fillColor: Colors.grey[50],
+                        hintText: '5000',
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                    const SizedBox(height: 16),
 
                     // Stock field
                     TextFormField(
                       controller: stokController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Stok',
-                        border: OutlineInputBorder(),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        prefixIcon: const Icon(Icons.inventory),
+                        filled: true,
+                        fillColor: Colors.grey[50],
+                        hintText: '10',
                       ),
                       keyboardType: TextInputType.number,
                       validator: (value) {
@@ -814,25 +1014,52 @@ class _ProdukPageState extends State<ProdukPage>
                         return null;
                       },
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
+
+                    // Stok Minimal field
+                    TextFormField(
+                      controller: stokMinimalController,
+                      decoration: InputDecoration(
+                        labelText: 'Stok Minimal (Opsional)',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        prefixIcon: const Icon(Icons.warning_amber),
+                        filled: true,
+                        fillColor: Colors.grey[50],
+                        hintText: '5',
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                    const SizedBox(height: 16),
 
                     // Description field
                     TextFormField(
                       controller: deskripsiController,
-                      decoration: const InputDecoration(
-                        labelText: 'Deskripsi',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: 'Deskripsi (Opsional)',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        prefixIcon: const Icon(Icons.description),
+                        filled: true,
+                        fillColor: Colors.grey[50],
                       ),
-                      maxLines: 3,
+                      maxLines: 2,
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
 
                     // Category field
                     DropdownButtonFormField<String>(
                       initialValue: selectedKategori,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Kategori',
-                        border: OutlineInputBorder(),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        prefixIcon: const Icon(Icons.category),
+                        filled: true,
+                        fillColor: Colors.grey[50],
                       ),
                       items: kategoriOptions
                           .map(
@@ -852,15 +1079,7 @@ class _ProdukPageState extends State<ProdukPage>
                         return null;
                       },
                     ),
-                    const SizedBox(height: 12),
-                    // Favorite toggle (only shows while editing or for convenience)
-                    SwitchListTile(
-                      title: const Text('Tambah ke favorit'),
-                      value: favState,
-                      onChanged: (v) {
-                        setState(() => favState = v);
-                      },
-                    ),
+                    const SizedBox(height: 20),
                   ],
                 ),
               ),
@@ -872,69 +1091,158 @@ class _ProdukPageState extends State<ProdukPage>
               ),
               ElevatedButton(
                 onPressed: () async {
-                  if (!formKey.currentState!.validate()) return;
+                  if (!formKey.currentState!.validate()) {
+                    if (kDebugMode) print('❌ Form validation failed');
+                    return;
+                  }
 
                   try {
+                    if (kDebugMode) print('🔄 Starting product save...');
+                    
                     String? imageUrl = produk?.gambar ?? '';
 
                     // Upload image if selected
                     if (_imageFile != null) {
+                      if (kDebugMode) print('📸 Uploading image...');
                       imageUrl = await _uploadImage(_imageFile!);
                       if (imageUrl == null) {
-                        // ignore: use_build_context_synchronously
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Gagal upload gambar')),
-                        );
+                        if (kDebugMode) print('❌ Image upload failed');
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Gagal upload gambar - cek permission dan storage'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
                         return;
                       }
+                      if (kDebugMode) print('✅ Image uploaded to: $imageUrl');
                     }
 
-                    final newProduk = Produk(
-                      id: produk?.id,
-                      nama: namaController.text,
-                      harga: double.parse(hargaController.text),
-                      stok: int.parse(stokController.text),
-                      deskripsi: deskripsiController.text,
-                      kategori: selectedKategori,
-                      gambar: imageUrl,
+                    // Parse form values with validation
+                    if (kDebugMode) print('📝 Parsing form values...');
+                    
+                    final nama = namaController.text.trim();
+                    if (nama.isEmpty) {
+                      throw ArgumentError('Nama produk tidak boleh kosong');
+                    }
+
+                    final hargaStr = hargaController.text.trim();
+                    if (hargaStr.isEmpty) {
+                      throw ArgumentError('Harga tidak boleh kosong');
+                    }
+                    
+                    final harga = int.tryParse(hargaStr);
+                    if (harga == null || harga <= 0) {
+                      throw ArgumentError('Harga harus angka positif');
+                    }
+
+                    final hargaBeli = hargaModalController.text.isNotEmpty
+                        ? int.tryParse(hargaModalController.text) ?? 0
+                        : 0;
+                    if (hargaBeli < 0) {
+                      throw ArgumentError('Harga beli tidak boleh negatif');
+                    }
+
+                    final stokStr = stokController.text.trim();
+                    if (stokStr.isEmpty) {
+                      throw ArgumentError('Stok tidak boleh kosong');
+                    }
+                    
+                    final stok = int.tryParse(stokStr);
+                    if (stok == null || stok < 0) {
+                      throw ArgumentError('Stok harus angka positif');
+                    }
+
+                    final deskripsi = deskripsiController.text.trim();
+
+                    if (kDebugMode) {
+                      print('📦 Product data:');
+                      print('   Nama: $nama');
+                      print('   Harga: $harga');
+                      print('   Kategori: $selectedKategori');
+                      print('   Stok: $stok');
+                    }
+
+                    // Create Produk object
+                    final newProduk = drift_db.Produk(
+                      id: isEditing ? produk.id : 0,
+                      nama: nama,
+                      harga: harga.toDouble(),
+                      hargaBeli: hargaBeli.toDouble(),
+                      stok: stok,
+                      kategori: selectedKategori ?? 'Lainnya',
+                      deskripsi: deskripsi.isEmpty ? null : deskripsi,
+                      gambar: imageUrl.isEmpty ? null : imageUrl,
+                      barcode: produk?.barcode,
+                      aktif: produk?.aktif ?? true,
+                      satuan: produk?.satuan ?? 'pcs',
+                      createdAt: produk?.createdAt ?? DateTime.now(),
+                      updatedAt: DateTime.now(),
                     );
 
+                    // Save to database
                     if (isEditing) {
+                      if (kDebugMode) print('✏️ Updating product...');
                       // ignore: use_build_context_synchronously
                       await context.read<PosProvider>().updateProduk(
-                        produk.id!,
+                        produk.id,
                         newProduk,
                       );
-                      // set favorite state
-                      if (favState != (produk.favorite)) {
-                        await context.read<PosProvider>().toggleFavorite(
-                          produk.id!,
-                        );
-                      }
+                      if (kDebugMode) print('✅ Product updated');
                     } else {
+                      if (kDebugMode) print('➕ Adding new product...');
                       // ignore: use_build_context_synchronously
                       await context.read<PosProvider>().addProduk(newProduk);
+                      if (kDebugMode) print('✅ Product added');
                     }
 
-                    // ignore: use_build_context_synchronously
-                    Navigator.pop(context);
-                    _imageFile = null; // Reset image
-
-                    // ignore: use_build_context_synchronously
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          isEditing
-                              ? 'Produk berhasil diupdate'
-                              : 'Produk berhasil ditambahkan',
-                        ),
-                      ),
-                    );
-                  } catch (e) {
-                    ScaffoldMessenger.of(
+                    if (mounted) {
                       // ignore: use_build_context_synchronously
-                      context,
-                    ).showSnackBar(SnackBar(content: Text('Error: $e')));
+                      Navigator.pop(context);
+                      _imageFile = null; // Reset image
+
+                      // ignore: use_build_context_synchronously
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            isEditing
+                                ? 'Produk berhasil diupdate'
+                                : 'Produk berhasil ditambahkan',
+                          ),
+                          backgroundColor: Colors.green,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  } on ArgumentError catch (e) {
+                    if (kDebugMode) print('❌ Validation error: $e');
+                    if (mounted) {
+                      // ignore: use_build_context_synchronously
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Validasi error: ${e.message}'),
+                          backgroundColor: Colors.orange,
+                          duration: const Duration(seconds: 3),
+                        ),
+                      );
+                    }
+                  } catch (e, st) {
+                    if (kDebugMode) {
+                      print('❌ Error saving product: $e');
+                      print('Stack: $st');
+                    }
+                    if (mounted) {
+                      // ignore: use_build_context_synchronously
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Gagal menyimpan: $e'),
+                          backgroundColor: Colors.red,
+                          duration: const Duration(seconds: 3),
+                        ),
+                      );
+                    }
                   }
                 },
                 child: Text(isEditing ? 'Update' : 'Tambah'),

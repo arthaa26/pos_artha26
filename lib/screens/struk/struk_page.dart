@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import '../../providers/pos_provider.dart';
+import '../../widgets/receipt_preview_widget.dart';
 
 class StrukPage extends StatefulWidget {
   const StrukPage({super.key});
@@ -172,264 +173,41 @@ class _StrukPageState extends State<StrukPage> {
   }
 
   Widget _buildReceiptPreview() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey),
-        borderRadius: BorderRadius.circular(8),
-        color: Colors.white,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Logo
-          SizedBox(
-            height: 50,
-            child: _logoFile != null
-                ? Image.file(File(_logoFile!.path), height: 50)
-                : context.watch<PosProvider>().settings.storeLogoPath.isNotEmpty
-                ? Image.file(
-                    File(context.watch<PosProvider>().settings.storeLogoPath),
-                    height: 50,
-                  )
-                : const Text(
-                    'LOGO',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-          ),
-          const SizedBox(height: 8),
-          // Nama Toko
-          Text(
-            _storeNameController.text.isNotEmpty
-                ? _storeNameController.text
-                : 'Nama Toko',
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.left,
-          ),
-          // Alamat
-          Text(
-            _storeAddressController.text.isNotEmpty
-                ? _storeAddressController.text
-                : 'Alamat Toko',
-            style: const TextStyle(fontSize: 12),
-            textAlign: TextAlign.left,
-          ),
-          const SizedBox(height: 16),
-          // ID Transaksi, Tanggal, Kasir
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('ID: TRX001', style: const TextStyle(fontSize: 12)),
-              Text('Tanggal: 2023-12-20', style: const TextStyle(fontSize: 12)),
-              Text('Kasir: Admin', style: const TextStyle(fontSize: 12)),
-            ],
-          ),
-          const Divider(),
-          // Produk Header
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                flex: 4,
-                child: Text(
-                  'Item',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                ),
-              ),
-              Expanded(
-                flex: 1,
-                child: Text(
-                  'Qty',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Text(
-                  'Harga',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.right,
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Text(
-                  'Total',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.right,
-                ),
-              ),
-            ],
-          ),
-          const Divider(),
-          // Produk Items
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                flex: 4,
-                child: Text('Produk A', style: const TextStyle(fontSize: 12)),
-              ),
-              Expanded(
-                flex: 1,
-                child: Text(
-                  '1',
-                  style: const TextStyle(fontSize: 12),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Text(
-                  'Rp 10,000',
-                  style: const TextStyle(fontSize: 12),
-                  textAlign: TextAlign.right,
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Text(
-                  'Rp 10,000',
-                  style: const TextStyle(fontSize: 12),
-                  textAlign: TextAlign.right,
-                ),
-              ),
-            ],
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                flex: 4,
-                child: Text('Produk B', style: const TextStyle(fontSize: 12)),
-              ),
-              Expanded(
-                flex: 1,
-                child: Text(
-                  '1',
-                  style: const TextStyle(fontSize: 12),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Text(
-                  'Rp 15,000',
-                  style: const TextStyle(fontSize: 12),
-                  textAlign: TextAlign.right,
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Text(
-                  'Rp 15,000',
-                  style: const TextStyle(fontSize: 12),
-                  textAlign: TextAlign.right,
-                ),
-              ),
-            ],
-          ),
-          const Divider(),
-          // PPN, Status, Metode
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'PPN (${(context.watch<PosProvider>().settings.ppnRate * 100).toStringAsFixed(0)}%)',
-                style: const TextStyle(fontSize: 12),
-              ),
-              Text(
-                'Rp ${(25000 * context.watch<PosProvider>().settings.ppnRate).toStringAsFixed(0)}',
-                style: const TextStyle(fontSize: 12),
-              ),
-            ],
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Status', style: const TextStyle(fontSize: 12)),
-              Text('Lunas', style: const TextStyle(fontSize: 12)),
-            ],
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Metode', style: const TextStyle(fontSize: 12)),
-              Text('Tunai', style: const TextStyle(fontSize: 12)),
-            ],
-          ),
-          const Divider(),
-          // Subtotal, Diskon, Total
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Subtotal', style: const TextStyle(fontSize: 12)),
-              Text('Rp 25,000', style: const TextStyle(fontSize: 12)),
-            ],
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Diskon', style: const TextStyle(fontSize: 12)),
-              Text('Rp 0', style: const TextStyle(fontSize: 12)),
-            ],
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Total',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Text(
-                'Rp 27,500',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const Divider(),
-          // Dibayar, Kembalian
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Dibayar', style: const TextStyle(fontSize: 12)),
-              Text('Rp 30,000', style: const TextStyle(fontSize: 12)),
-            ],
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Kembalian', style: const TextStyle(fontSize: 12)),
-              Text('Rp 2,500', style: const TextStyle(fontSize: 12)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          // Terima Kasih dan Jam Operasional
-          Text(
-            _thankYouMessageController.text.isNotEmpty
-                ? _thankYouMessageController.text
-                : 'Terima Kasih',
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            _operatingHoursController.text.isNotEmpty
-                ? _operatingHoursController.text
-                : 'Jam Operasional: 08:00 - 20:00',
-            style: const TextStyle(fontSize: 10),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
+    final provider = context.watch<PosProvider>();
+    final settings = provider.settings;
+
+    // Sample items for preview
+    final sampleItems = [
+      {
+        'nama': 'Kopi',
+        'jumlah': 1,
+        'hargaSatuan': 25000.0,
+        'subtotal': 25000.0,
+      },
+    ];
+
+    return ReceiptPreviewWidget(
+      storeName: _storeNameController.text.isNotEmpty
+          ? _storeNameController.text
+          : 'Nama Toko',
+      storeAddress: _storeAddressController.text.isNotEmpty
+          ? _storeAddressController.text
+          : 'Alamat Toko',
+      storePhone: provider.settings.storePhone,
+      storeLogoPath: _logoFile?.path ?? provider.settings.storeLogoPath,
+      items: sampleItems,
+      subtotal: 25000.0,
+      ppnRate: settings.ppnRate,
+      cashGiven: 30000.0,
+      change: 2500.0,
+      transactionNumber: 'TRX001',
+      transactionTime: DateTime.now(),
+      thankYouMessage: _thankYouMessageController.text.isNotEmpty
+          ? _thankYouMessageController.text
+          : 'Terima Kasih',
+      operatingHours: _operatingHoursController.text.isNotEmpty
+          ? _operatingHoursController.text
+          : 'Senin - Minggu: 08:00 - 20:00',
     );
   }
 }

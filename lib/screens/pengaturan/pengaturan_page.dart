@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'dart:io';
-import 'package:image_picker/image_picker.dart';
 import '../../providers/pos_provider.dart';
 
 class PengaturanPage extends StatefulWidget {
@@ -12,298 +10,299 @@ class PengaturanPage extends StatefulWidget {
 }
 
 class _PengaturanPageState extends State<PengaturanPage> {
-  final TextEditingController _pinController = TextEditingController();
-  final TextEditingController _profitMarginController = TextEditingController();
-  final TextEditingController _ppnController = TextEditingController();
-  final TextEditingController _storeNameController = TextEditingController();
-
-  final TextEditingController _oldPinController = TextEditingController();
-  final TextEditingController _newPinController = TextEditingController();
-  final TextEditingController _confirmPinController = TextEditingController();
-
-  final ImagePicker _picker = ImagePicker();
-  XFile? _logoFile;
-
-  bool _showPinDialog = true;
-
-  @override
-  void initState() {
-    super.initState();
-    final settings = context.read<PosProvider>().settings;
-    _profitMarginController.text = (settings.profitMargin * 100).toString();
-    _ppnController.text = (settings.ppnRate * 100).toString();
-    _storeNameController.text = settings.storeName;
-  }
-
-  @override
-  void dispose() {
-    _pinController.dispose();
-    _profitMarginController.dispose();
-    _ppnController.dispose();
-    _storeNameController.dispose();
-    _oldPinController.dispose();
-    _newPinController.dispose();
-    _confirmPinController.dispose();
-    super.dispose();
-  }
-
-  void _changePin() {
-    final oldPin = _oldPinController.text;
-    final newPin = _newPinController.text;
-    final confirm = _confirmPinController.text;
-    final provider = context.read<PosProvider>();
-    if (!provider.verifyPin(oldPin)) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('PIN lama salah')));
-      return;
-    }
-    if (newPin.length < 4 || newPin != confirm) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Konfirmasi PIN tidak cocok atau terlalu pendek'),
-        ),
-      );
-      return;
-    }
-    final settings = provider.settings.copyWith(pinCode: newPin);
-    provider.updateSettings(settings);
-    _oldPinController.clear();
-    _newPinController.clear();
-    _confirmPinController.clear();
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('PIN berhasil diubah')));
-  }
-
-  void _verifyPin() {
-    final pin = _pinController.text;
-    if (context.read<PosProvider>().verifyPin(pin)) {
-      setState(() {
-        _showPinDialog = false;
-      });
-    } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('PIN salah!')));
-    }
-  }
-
-  void _saveSettings() {
-    final settings = context.read<PosProvider>().settings;
-    final newSettings = settings.copyWith(
-      storeName: _storeNameController.text.isNotEmpty
-          ? _storeNameController.text
-          : settings.storeName,
-      profitMargin: double.tryParse(_profitMarginController.text) ?? 20.0 / 100,
-      ppnRate: double.tryParse(_ppnController.text) ?? 10.0 / 100,
-      storeLogoPath: _logoFile?.path ?? settings.storeLogoPath,
-    );
-    context.read<PosProvider>().updateSettings(newSettings);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Pengaturan disimpan!')));
-  }
-
-  Future<void> _pickLogo() async {
-    final picked = await _picker.pickImage(source: ImageSource.gallery);
-    if (picked != null) {
-      setState(() {
-        _logoFile = picked;
-      });
-    }
-  }
-
-  Widget _buildLogoSelector() {
-    final settings = context.watch<PosProvider>().settings;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: _logoFile != null
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: Image.file(
-                        File(_logoFile!.path),
-                        fit: BoxFit.cover,
-                      ),
-                    )
-                  : settings.storeLogoPath.isNotEmpty
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: Image.file(
-                        File(settings.storeLogoPath),
-                        fit: BoxFit.cover,
-                      ),
-                    )
-                  : const Icon(Icons.store, size: 40, color: Colors.grey),
-            ),
-            const SizedBox(width: 12),
-            ElevatedButton(
-              onPressed: _pickLogo,
-              child: const Text('Pilih Logo'),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (_showPinDialog) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('Pengaturan'),
-          backgroundColor: Colors.grey[300],
-        ),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text(
-                  'Masukkan PIN untuk akses pengaturan',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 20),
-                TextField(
-                  controller: _pinController,
-                  obscureText: true,
-                  keyboardType: TextInputType.number,
-                  maxLength: 4,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 24),
-                  decoration: const InputDecoration(
-                    hintText: 'Masukkan PIN',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: _verifyPin,
-                  child: const Text('Masuk'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Pengaturan'),
-        backgroundColor: Colors.grey[300],
+        backgroundColor: Colors.blue,
+        elevation: 0,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSection('Informasi Toko', [
-              _buildTextField('Nama Toko', _storeNameController),
-              const SizedBox(height: 16),
-              _buildLogoSelector(),
-            ]),
-            _buildSection('Keuntungan & Pajak', [
-              _buildTextField(
-                'Margin Keuntungan (%)',
-                _profitMarginController,
-                keyboardType: TextInputType.number,
-              ),
-              _buildTextField(
-                'PPN (%)',
-                _ppnController,
-                keyboardType: TextInputType.number,
-              ),
-            ]),
-            _buildSection('Ganti PIN', [
-              _buildTextField(
-                'PIN Lama',
-                _oldPinController,
-                keyboardType: TextInputType.number,
-              ),
-              _buildTextField(
-                'PIN Baru',
-                _newPinController,
-                keyboardType: TextInputType.number,
-              ),
-              _buildTextField(
-                'Konfirmasi PIN Baru',
-                _confirmPinController,
-                keyboardType: TextInputType.number,
-              ),
-              Center(
-                child: ElevatedButton(
-                  onPressed: _changePin,
-                  child: const Text('Ubah PIN'),
-                ),
-              ),
-            ]),
-            const SizedBox(height: 20),
-            Center(
-              child: ElevatedButton(
-                onPressed: _saveSettings,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 40,
-                    vertical: 15,
+        child: Consumer<PosProvider>(
+          builder: (context, provider, _) {
+            final settings = provider.settings;
+            return Column(
+              children: [
+                // Toko Info
+                Container(
+                  color: Colors.blue[50],
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Informasi Toko',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildSettingCard(
+                        icon: Icons.store,
+                        label: 'Nama Toko',
+                        value: settings.storeName,
+                        onTap: () {
+                          Navigator.pushNamed(context, '/edit_profile');
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      _buildSettingCard(
+                        icon: Icons.location_on,
+                        label: 'Alamat',
+                        value: settings.storeAddress,
+                        onTap: () {
+                          Navigator.pushNamed(context, '/edit_profile');
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      _buildSettingCard(
+                        icon: Icons.phone,
+                        label: 'No. Telepon',
+                        value: settings.storePhone,
+                        onTap: () {
+                          Navigator.pushNamed(context, '/edit_profile');
+                        },
+                      ),
+                    ],
                   ),
                 ),
-                child: const Text('Simpan Pengaturan'),
-              ),
-            ),
-          ],
+                const SizedBox(height: 16),
+
+                // Pengaturan Transaksi
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Pengaturan Transaksi',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildSettingCard(
+                              icon: Icons.percent,
+                              label: 'PPN',
+                              value:
+                                  '${(settings.ppnRate * 100).toStringAsFixed(1)}%',
+                              onTap: () {
+                                Navigator.pushNamed(context, '/edit_profile');
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildSettingCard(
+                              icon: Icons.trending_up,
+                              label: 'HPP/Margin',
+                              value:
+                                  '${(settings.hppMargin * 100).toStringAsFixed(1)}%',
+                              onTap: () {
+                                Navigator.pushNamed(context, '/edit_profile');
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Database Settings
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Database',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Column(
+                        children: [
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.backup),
+                            title: const Text('Backup Database'),
+                            subtitle: const Text('Unduh backup database Anda'),
+                            trailing: const Icon(Icons.download),
+                            onTap: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Fitur backup sedang dikembangkan',
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          const Divider(),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.refresh),
+                            title: const Text('Refresh Data'),
+                            subtitle: const Text('Muat ulang semua data'),
+                            trailing: const Icon(Icons.sync),
+                            onTap: () {
+                              provider.loadProduk();
+                              provider.loadTransaksi();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Data berhasil dimuat ulang'),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Notifikasi
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Notifikasi',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.notifications),
+                        title: const Text('Notifikasi Stok'),
+                        subtitle: const Text('Aktifkan notifikasi stok rendah'),
+                        trailing: Switch(
+                          value: true,
+                          onChanged: (value) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  value
+                                      ? 'Notifikasi stok diaktifkan'
+                                      : 'Notifikasi stok dinonaktifkan',
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const Divider(),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.notifications_active),
+                        title: const Text('Notifikasi Transaksi'),
+                        subtitle: const Text(
+                          'Aktifkan notifikasi untuk setiap transaksi',
+                        ),
+                        trailing: Switch(
+                          value: false,
+                          onChanged: (value) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  value
+                                      ? 'Notifikasi transaksi diaktifkan'
+                                      : 'Notifikasi transaksi dinonaktifkan',
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Tentang
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Tentang',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.info),
+                        title: const Text('Versi Aplikasi'),
+                        trailing: const Text(
+                          'v1.0.0',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                      const Divider(),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.person),
+                        title: const Text('Pengembang'),
+                        trailing: const Text(
+                          'Artha26',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 32),
+              ],
+            );
+          },
         ),
       ),
     );
   }
 
-  Widget _buildSection(String title, List<Widget> children) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16.0),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            ...children,
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextField(
-    String label,
-    TextEditingController controller, {
-    TextInputType keyboardType = TextInputType.text,
+  Widget _buildSettingCard({
+    required IconData icon,
+    required String label,
+    required String value,
+    required VoidCallback onTap,
   }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
-      child: TextField(
-        controller: controller,
-        keyboardType: keyboardType,
-        decoration: InputDecoration(
-          labelText: label,
-          border: const OutlineInputBorder(),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: ListTile(
+        leading: Icon(icon, color: Colors.blue),
+        title: Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: Colors.grey),
         ),
+        subtitle: Text(
+          value,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+        ),
+        trailing: const Icon(Icons.edit, size: 18, color: Colors.blue),
+        onTap: onTap,
       ),
     );
   }
